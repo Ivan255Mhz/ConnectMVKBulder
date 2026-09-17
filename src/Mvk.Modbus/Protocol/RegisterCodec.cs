@@ -89,6 +89,31 @@ namespace Mvk.Modbus.Protocol
         }
 
         /// <summary>
+        /// Преобразует регистры в байты: старший байт регистра — первый.
+        /// </summary>
+        /// <param name="registers">Регистры.</param>
+        /// <param name="byteCount">Число байт; -1 — все байты регистров.</param>
+        public static byte[] ToBytes(ReadOnlySpan<ushort> registers, int byteCount = -1)
+        {
+            int totalBytes = registers.Length * 2;
+            if (byteCount >= 0)
+            {
+                totalBytes = Math.Min(byteCount, totalBytes);
+            }
+
+            byte[] bytes = new byte[totalBytes];
+            for (int i = 0; i < totalBytes; i++)
+            {
+                ushort register = registers[i / 2];
+                bytes[i] = i % 2 == 0
+                    ? (byte)(register >> 8)
+                    : (byte)register;
+            }
+
+            return bytes;
+        }
+
+        /// <summary>
         /// Декодирует строку из регистров: старший байт регистра — первый символ.
         /// Строка обрезается по первому нулевому байту, пробелы по краям удаляются.
         /// </summary>

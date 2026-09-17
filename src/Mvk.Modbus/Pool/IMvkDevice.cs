@@ -51,6 +51,14 @@ namespace Mvk.Modbus.Pool
         Task<ModbusResponse> ExecuteAsync(ModbusRequest request, CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// Выполняет запрос с общим таймаутом операции (учитывается middleware таймаута).
+        /// </summary>
+        /// <param name="request">Запрос к устройству.</param>
+        /// <param name="timeout">Общий таймаут операции.</param>
+        /// <param name="cancellationToken">Токен отмены.</param>
+        Task<ModbusResponse> ExecuteAsync(ModbusRequest request, TimeSpan timeout, CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// Устанавливает соединение явно (например, для проверки доступности).
         /// </summary>
         /// <param name="cancellationToken">Токен отмены.</param>
