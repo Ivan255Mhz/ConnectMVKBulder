@@ -23,6 +23,12 @@
 - 32-битные значения (float/uint) занимают два регистра; порядок байт — по регистру 0x000C
   (BigEndian по умолчанию).
 - Серийный номер — 0x1000 (4 регистра), версия ПО — 0x1004 (2 регистра).
+- Адресация параметров по номерам: адрес = 0x4000 + (N−1)×16. Пример для N=48 в
+  `MVK01_registers.txt` (0x41F0) ошибочен — фактически **0x42F0**; проверено на устройстве:
+  значение СКЗ совпало с прямым чтением канала.
+- Строки единиц измерения и серийных номеров датчиков хранятся с обратным порядком байт
+  внутри 4-байтных слов (`Mvk01Codec.DecodeTextSwapped`), кодировка cp1251; серийный номер
+  устройства читается прямым порядком.
 - Запись регистров, Save и Reboot на реальном устройстве — только с явного разрешения.
 
 ## Принципы простоты (обязательные)
@@ -69,10 +75,11 @@ samples/
   события состояния, `FromJsonFile`, `AddDevice`/`RemoveDevice`. Проверено на реальном МВК01.
 - [x] **Этап 5. DI и конфигурация.** `AddMvkModbus`, `AddModbusMiddleware<T>`,
   `AddMvkModbusHostedService`, пример `mvkmodbus.json`, тесты биндинга и валидации.
-- [ ] **Этап 6. Mvk.MVK01.** `Mvk01Connection` (простой вход без конфига), `Mvk01RegisterMap`,
-  enums, `Mvk01SpectrumBands`, `Mvk01MeasurementNumber`, `Mvk01Codec`,
+- [x] **Этап 6. Mvk.MVK01.** `Mvk01Connection` (простой вход без конфига), `Mvk01RegisterMap`,
+  enums, `Mvk01SpectrumBands`, `Mvk01MeasurementNumber`, `Mvk01Codec` (включая swap-строки и cp1251),
   `IMvk01Device`/`IMvk01DeviceFactory` (`ReadDeviceInfoAsync`, `ReadChannelAsync` — снимок канала,
-  `ReadTachoAsync`, команды Save/Reboot/Restore), тесты.
+  `ReadChannelConfigAsync`, `ReadTachoAsync`, чтение по номерам, команды Save/Reboot/Restore
+  с ожиданием статуса), `AddMvk01Devices`. Проверено на реальном МВК01.
 - [ ] **Этап 7. Пример.** Консольное приложение: подключение, кастомный middleware, чтение
   спектра, прогон против эмулятора.
 

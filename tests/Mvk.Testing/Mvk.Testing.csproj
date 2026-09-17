@@ -10,4 +10,8 @@
     <PackageReference Include="NModbus" Version="3.0.81" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Mvk.Modbus\Mvk.Modbus.csproj" />
+  </ItemGroup>
+
 </Project>

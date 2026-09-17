@@ -97,7 +97,21 @@ namespace Mvk.Modbus.Pool
         public event EventHandler<MvkDeviceStateChangedEventArgs>? StateChanged;
 
         /// <inheritdoc/>
-        public async Task<ModbusResponse> ExecuteAsync(ModbusRequest request, CancellationToken cancellationToken = default)
+        public Task<ModbusResponse> ExecuteAsync(ModbusRequest request, CancellationToken cancellationToken = default)
+        {
+            return ExecuteCoreAsync(request, null, cancellationToken);
+        }
+
+        /// <inheritdoc/>
+        public Task<ModbusResponse> ExecuteAsync(ModbusRequest request, TimeSpan timeout, CancellationToken cancellationToken = default)
+        {
+            return ExecuteCoreAsync(request, timeout, cancellationToken);
+        }
+
+        private async Task<ModbusResponse> ExecuteCoreAsync(
+            ModbusRequest request,
+            TimeSpan? timeout,
+            CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(request);
             ObjectDisposedException.ThrowIf(disposed, this);
@@ -117,6 +131,11 @@ namespace Mvk.Modbus.Pool
                 Interlocked.Exchange(ref lastRequestTicks, now.UtcDateTime.Ticks);
 
                 ModbusRequestContext context = new(Settings, request, cancellationToken);
+                if (timeout is not null)
+                {
+                    context.Items[MvkContextItems.TimeoutMs] = (int)timeout.Value.TotalMilliseconds;
+                }
+
                 ModbusResponse response = await pipeline.ExecuteAsync(context).ConfigureAwait(false);
 
                 ApplyResult(response);
