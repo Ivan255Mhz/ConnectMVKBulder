@@ -64,8 +64,9 @@ samples/
 - [x] **Этап 3. Пайплайн.** `ModbusRequestContext`, `InvokeModbusDelegate`, `IModbusMiddleware`,
   билдер, встроенные middleware: timeout, logging, validation (в т.ч. чётность адреса/количества),
   retry, metrics, writeProtection. Кэширование — при необходимости позже.
-- [ ] **Этап 4. Пул устройств.** `IMvkDevice`, `IMvkDevicePool`, `MvkDevice` (сериализация,
-  состояния, реконнект), `MvkPoolReconnector` (idle-disconnect, health-check), события состояния.
+- [x] **Этап 4. Пул устройств.** `IMvkDevice`, `IMvkDevicePool`, `MvkDevice` (сериализация,
+  состояния, реконнект с backoff), фоновое обслуживание (idle-disconnect, health-check),
+  события состояния, `FromJsonFile`, `AddDevice`/`RemoveDevice`. Проверено на реальном МВК01.
 - [ ] **Этап 5. DI и конфигурация.** `AddMvkModbus`, hosted-сервисы, пример `mvkmodbus.json`,
   тесты биндинга и валидации.
 - [ ] **Этап 6. Mvk.MVK01.** `Mvk01Connection` (простой вход без конфига), `Mvk01RegisterMap`,
@@ -95,7 +96,7 @@ samples/
       "MaxConcurrentRequests": 1,
       "WritePolicy": "ProtectConfigArea"
     },
-    "Pipeline": ["timeout", "logging", "validation", "retry", "writeProtection"],
+    "Pipeline": ["timeout", "logging", "metrics", "validation", "retry", "writeProtection"],
     "Pool": { "ReconnectEnabled": true, "HealthCheckIntervalSeconds": 15 },
     "Devices": [
       {

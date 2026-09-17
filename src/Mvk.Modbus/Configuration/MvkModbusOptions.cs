@@ -51,11 +51,12 @@ namespace Mvk.Modbus.Configuration
         }
 
         /// <summary>
-        /// Порядок middleware по умолчанию: timeout → logging → validation → retry → writeProtection.
+        /// Порядок middleware по умолчанию:
+        /// timeout → logging → metrics → validation → retry → writeProtection.
         /// </summary>
         public static List<string> CreateDefaultPipeline()
         {
-            return ["timeout", "logging", "validation", "retry", "writeProtection"];
+            return ["timeout", "logging", "metrics", "validation", "retry", "writeProtection"];
         }
     }
 }
