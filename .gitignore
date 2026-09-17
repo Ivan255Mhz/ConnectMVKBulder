@@ -1,0 +1,39 @@
+## Visual Studio / Rider
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## Сборка
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+*.binlog
+
+## Публикация
+publish/
+*.publishsettings
+
+## NuGet
+*.nupkg
+*.snupkg
+packages/
+!**/packages/build/
+
+## Тесты
+TestResults/
+*.trx
+*.coverage
+coverage*.xml
+coverage*.json
+
+## Прочее
+*.log
+*.tmp
+.vscode/
+Thumbs.db
+desktop.ini
