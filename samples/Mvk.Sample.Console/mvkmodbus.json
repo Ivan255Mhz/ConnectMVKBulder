@@ -16,7 +16,7 @@
       "WritePolicy": "ProtectConfigArea",
       "RequireEvenAddressAndQuantity": true
     },
-    "Pipeline": ["timeout", "logging", "metrics", "validation", "retry", "writeProtection"],
+    "Pipeline": ["timeout", "logging", "metrics", "audit", "validation", "retry", "writeProtection"],
     "Pool": {
       "ReconnectEnabled": true,
       "HealthCheckIntervalSeconds": 15
