@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Mvk.Sample.Polling</RootNamespace>
+    <Description>Минимальный пример: циклический опрос СКЗ виброускорения 10…1000 Гц.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Mvk.Modbus\Mvk.Modbus.csproj" />
+    <ProjectReference Include="..\..\src\Mvk.MVK01\Mvk.MVK01.csproj" />
+  </ItemGroup>
+
+</Project>

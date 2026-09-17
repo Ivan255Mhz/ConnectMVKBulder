@@ -543,6 +543,13 @@ dotnet run --project samples\Mvk.Sample.Console -- watch      # до Ctrl+C
 dotnet run --project samples\Mvk.Sample.Console -- watch 10   # 10 секунд
 ```
 
+Есть и минимальный отдельный пример только с опросом полосы 10…1000 Гц:
+
+```powershell
+dotnet run --project samples\Mvk.Sample.Polling                    # до Ctrl+C
+dotnet run --project samples\Mvk.Sample.Polling -- 10.20.0.211 10 1 # хост, секунды, канал
+```
+
 В режиме `watch` пример каждые 500 мс вызывает
 `ReadMeasurementByNumberAsync(Mvk01MeasurementNumber.Rms10To1000Acceleration)`
 и печатает СКЗ виброускорения 10…1000 Гц сразу по всем 8 каналам:

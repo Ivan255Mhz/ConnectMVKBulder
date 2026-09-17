@@ -157,6 +157,7 @@ TCP-сокет :502                            Modbus/TCP -> устройств�
 | `tests/Mvk.Modbus.Tests` | Тесты транспорта, пайплайна, пула и конфигурации |
 | `tests/Mvk.MVK01.Tests` | Тесты карты регистров, кодеков и фасада |
 | `samples/Mvk.Sample.Console` | Пример: DI + свой middleware + чтение канала и спектра |
+| `samples/Mvk.Sample.Polling` | Минимальный пример: опрос СКЗ 10…1000 Гц в цикле каждые 0,5 с |
 
 Зависимости:
 
@@ -181,9 +182,10 @@ TCP-сокет :502                            Modbus/TCP -> устройств�
   эмулятор.
 
 ```powershell
-dotnet build ConnectMVKBulder.sln                 # сборка
-dotnet test                                       # тесты
-dotnet run --project samples\Mvk.Sample.Console   # пример
+dotnet build ConnectMVKBulder.sln                      # сборка
+dotnet test                                            # тесты
+dotnet run --project samples\Mvk.Sample.Console        # обзор устройства (DI-пример)
+dotnet run --project samples\Mvk.Sample.Polling        # опрос СКЗ 10…1000 Гц каждые 0,5 с
 ```
 
 Проверить доступность устройства перед запуском примеров:
