@@ -17,13 +17,14 @@
 5. [Пул устройств](#пул-устройств)
 6. [Пайплайн middleware](#пайплайн-middleware)
 7. [Типизированный слой МВК01](#типизированный-слой-мвк01)
-8. [Сырые регистры и кодеки](#сырые-регистры-и-кодеки)
-9. [Ошибки](#ошибки)
-10. [Логирование и метрики](#логирование-и-метрики)
-11. [Тестирование без железа](#тестирование-без-железа)
-12. [Расширение библиотеки](#расширение-библиотеки)
-13. [Особенности МВК01](#особенности-мвк01)
-14. [Частые вопросы и ошибки](#частые-вопросы-и-ошибки)
+8. [Периодический опрос значений](#периодический-опрос-значений)
+9. [Сырые регистры и кодеки](#сырые-регистры-и-кодеки)
+10. [Ошибки](#ошибки)
+11. [Логирование и метрики](#логирование-и-метрики)
+12. [Тестирование без железа](#тестирование-без-железа)
+13. [Расширение библиотеки](#расширение-библиотеки)
+14. [Особенности МВК01](#особенности-мвк01)
+15. [Частые вопросы и ошибки](#частые-вопросы-и-ошибки)
 
 ---
 
@@ -622,6 +623,113 @@ for (int band = 1; band <= Mvk01SpectrumBands.Count; band++)
 (смещения — от базы канала).
 
 ---
+
+## Периодический опрос значений
+
+Пример: каждые 0,5 с получать СКЗ виброускорения в полосе 10…1000 Гц по каналу 1.
+Опрос с таким периодом для МВК01 безопасен: запросы к устройству сериализуются,
+данные обновляются DSP-буфером, повторная отправка не требуется.
+
+### Способ 1 — простой: параметр по номеру (один запрос на все 8 каналов)
+
+```csharp
+using Mvk.MVK01;
+
+await using Mvk01Connection mvk = await Mvk01Connection.ConnectAsync("10.20.0.211");
+IMvk01Device device = mvk.Device;
+
+using CancellationTokenSource cts = new();
+Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+
+using PeriodicTimer timer = new(TimeSpan.FromMilliseconds(500));
+while (await timer.WaitForNextTickAsync(cts.Token))
+{
+    try
+    {
+        float[] values = await device.ReadMeasurementByNumberAsync(
+            Mvk01MeasurementNumber.Rms10To1000Acceleration, cts.Token);
+
+        Console.WriteLine($"{DateTime.Now:HH:mm:ss.fff}  канал 1: {values[0]:F4} м/с2");
+    }
+    catch (MvkModbusException ex)
+    {
+        // Транспортные ошибки: реконнект уже идёт в фоне, продолжаем опрос.
+        Console.WriteLine($"{DateTime.Now:HH:mm:ss.fff}  ошибка: {ex.ErrorKind} — {ex.Message}");
+    }
+}
+```
+
+Если нужны все каналы сразу — тот же вызов уже вернул `values[0..7]`.
+Номер параметра: `Rms10To1000Acceleration = 55` (см. `Mvk01MeasurementNumber`).
+
+### Способ 2 — минимальный трафик: только 2 регистра канала
+
+Читаем адрес нужной полосы напрямую. Смещение набора СКЗ:
+`0x60 + (индекс набора) × 6 + (0 — ускорение, 2 — скорость, 4 — перемещение)`.
+
+| Индекс набора | Полоса | `RmsSet` |
+|---|---|---|
+| 0 | 10…3000 Гц | `channel.RmsSets[0]` |
+| 1 | 10…2000 Гц | `channel.RmsSets[1]` |
+| **2** | **10…1000 Гц** | `channel.RmsSets[2]` |
+| 3 | 2…1000 Гц | `channel.RmsSets[3]` |
+| 4 | 0.8…300 Гц | `channel.RmsSets[4]` |
+| 5 | 0.8…150 Гц | `channel.RmsSets[5]` |
+| 6 | Фильтр 1 | `channel.RmsSets[6]` |
+| 7 | Фильтр 2 | `channel.RmsSets[7]` |
+
+```csharp
+using Mvk.Modbus;
+using Mvk.Modbus.Protocol;
+using Mvk.MVK01;
+
+const int channel = 1;
+const int rmsSetIndex = 2; // 10…1000 Гц
+
+ushort address = (ushort)(Mvk01RegisterMap.ChannelData(channel)
+    + Mvk01RegisterMap.RmsSetOffset
+    + Mvk01RegisterMap.RmsSetValues * 2 * rmsSetIndex);   // 0x206C для канала 1
+
+IMvkDevice raw = mvk.Device.Device;
+using PeriodicTimer timer = new(TimeSpan.FromMilliseconds(500));
+
+while (await timer.WaitForNextTickAsync(cts.Token))
+{
+    try
+    {
+        ushort[] registers = await raw.ReadHoldingRegistersAsync(address, 2, cts.Token);
+        float value = RegisterCodec.ToSingle(registers, raw.Settings.ByteOrder);
+
+        Console.WriteLine($"{DateTime.Now:HH:mm:ss.fff}  10…1000 Гц: {value:F4} м/с2");
+    }
+    catch (MvkModbusException ex) when (ex.IsTransient)
+    {
+        Console.WriteLine($"{DateTime.Now:HH:mm:ss.fff}  нет связи: {ex.ErrorKind}");
+    }
+}
+```
+
+### Способ 3 — весь снимок канала
+
+Если нужны напряжение, спектр, все СКЗ и состояния — периодически читайте снимок
+целиком (5 запросов, единицы–десятки миллисекунд):
+
+```csharp
+// mvk и cts — из примера выше
+Mvk01Channel snapshot = await mvk.Device.ReadChannelAsync(1, cts.Token);
+float value = snapshot.RmsSets[2].Acceleration;   // 10…1000 Гц
+```
+
+### Замечания
+
+- Для стабильного периода используйте `PeriodicTimer`, а не `Task.Delay` —
+  первый не накапливает дрейф.
+- Не запускайте параллельные циклы опроса одного устройства без необходимости:
+  запросы и так выполняются по очереди (`MaxConcurrentRequests`).
+- Если значение нужно отображать в WPF, обновляйте привязки в UI-потоке
+  (`Application.Current.Dispatcher.InvokeAsync`) или используйте `SynchronizationContext`.
+- Отмена (`CancellationToken`) проявляется как `OperationCanceledException` —
+  в примерах она завершает цикл через `WaitForNextTickAsync`.
 
 ## Сырые регистры и кодеки
 
