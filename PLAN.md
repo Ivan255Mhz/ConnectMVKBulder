@@ -16,6 +16,18 @@
 - Типизированный слой **Mvk.MVK01** по карте регистров (каналы АЦП, тахометры, спектры, конфигурация).
 - Именование: решение `ConnectMVKBulder`, библиотеки `Mvk.Modbus`, `Mvk.MVK01`.
 
+## Принципы простоты (обязательные)
+
+- Простейший сценарий — три строки: `Mvk01Connection.ConnectAsync(host)` → `ReadChannelAsync(1)` → декодированные значения.
+- Все параметры (порт 502, SlaveId 1, BigEndian, таймауты, ретраи, автореконнект) имеют рабочие значения по умолчанию.
+- Один вызов `ReadChannelAsync` = полный снимок канала; запросы к устройству библиотека делает сама
+  (чанки не более 125 регистров).
+- Значения декодированы (float, строки, битовые поля, статусы) — никаких ручных `BitConverter` в прикладном коде.
+- Ошибки — одно исключение `MvkModbusException` с понятным текстом; связь восстанавливается автоматически.
+- JSON-конфиг и middleware опциональны: минимальный конфиг устройства — `{ "Id", "Host" }`.
+- «Сложный» API (пул, пайплайн, сырые регистры) доступен, но не обязателен.
+- Публичные API только асинхронные; синхронные обёртки не добавляем.
+
 ## Структура решения
 
 ```
@@ -37,16 +49,19 @@ samples/
 - [x] **Этап 1. Ядро Mvk.Modbus.** Исключения (`MvkModbusException`, `MvkErrorKind`),
   `ModbusRequest`/`ModbusResponse`/`ModbusOperation`, опции (`MvkModbusOptions`, `MvkDeviceOptions`,
   `MvkDefaultsOptions`), валидация, загрузка JSON.
-- [ ] **Этап 2. Транспорт.** `IMvkTransport`, `NModbusTransport` (async, таймауты, ByteOrder),
-  эмулятор `Mvk.Testing`, тесты против эмулятора.
+- [x] **Этап 2. Транспорт.** `IMvkTransport`, `NModbusTransport` (async, таймауты, ленивое
+  подключение, авто-разрыв при ошибке), `RegisterCodec` (Big/Little/Mixed), эмулятор
+  `Mvk.Testing` (Modbus-slave и молчащий сервер), тесты против эмулятора.
 - [ ] **Этап 3. Пайплайн.** `ModbusRequestContext`, `InvokeModbusDelegate`, `IModbusMiddleware`,
   билдер, встроенные middleware: timeout, logging, validation, retry, metrics, writeProtection, caching.
 - [ ] **Этап 4. Пул устройств.** `IMvkDevice`, `IMvkDevicePool`, `MvkDevice` (сериализация,
   состояния, реконнект), `MvkPoolReconnector` (idle-disconnect, health-check), события состояния.
 - [ ] **Этап 5. DI и конфигурация.** `AddMvkModbus`, hosted-сервисы, пример `mvkmodbus.json`,
   тесты биндинга и валидации.
-- [ ] **Этап 6. Mvk.MVK01.** `Mvk01RegisterMap`, enums, `Mvk01SpectrumBands`,
-  `Mvk01MeasurementNumber`, `Mvk01Codec`, `IMvk01Device`/`IMvk01DeviceFactory`, тесты.
+- [ ] **Этап 6. Mvk.MVK01.** `Mvk01Connection` (простой вход без конфига), `Mvk01RegisterMap`,
+  enums, `Mvk01SpectrumBands`, `Mvk01MeasurementNumber`, `Mvk01Codec`,
+  `IMvk01Device`/`IMvk01DeviceFactory` (`ReadDeviceInfoAsync`, `ReadChannelAsync` — снимок канала,
+  `ReadTachoAsync`, команды Save/Reboot/Restore), тесты.
 - [ ] **Этап 7. Пример.** Консольное приложение: подключение, кастомный middleware, чтение
   спектра, прогон против эмулятора.
 
