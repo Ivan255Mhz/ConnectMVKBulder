@@ -8,7 +8,7 @@ namespace Mvk.Modbus.Pool
 {
     /// <summary>
     /// Устройство пула: сериализует запросы и выполняет их через пайплайн middleware.
-    /// Метод <see cref="ExecuteAsync"/> возвращает ответ (в том числе с ошибкой),
+    /// Метод <see cref="ExecuteAsync(ModbusRequest, CancellationToken)"/> возвращает ответ (в том числе с ошибкой),
     /// удобные обёртки чтения/записи выбрасывают <see cref="MvkModbusException"/>.
     /// </summary>
     public interface IMvkDevice : IDisposable

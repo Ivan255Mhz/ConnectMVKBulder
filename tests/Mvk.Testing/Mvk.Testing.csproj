@@ -3,6 +3,7 @@
   <PropertyGroup>
     <RootNamespace>Mvk.Testing</RootNamespace>
     <Description>Эмулятор Modbus-slave (NModbus) для интеграционных тестов без реального оборудования.</Description>
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>

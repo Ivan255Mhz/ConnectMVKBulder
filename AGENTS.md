@@ -8,9 +8,11 @@ Roadmap и ключевые решения: [PLAN.md](PLAN.md). Карта ре�
 ## Команды
 
 ```powershell
-dotnet build ConnectMVKBulder.sln        # сборка
-dotnet test                              # тесты
-dotnet run --project samples\Mvk.Sample.Console   # пример
+dotnet build ConnectMVKBulder.sln                  # сборка
+dotnet test                                        # тесты
+dotnet run --project samples\Mvk.Sample.Console    # пример (DI, watch)
+dotnet run --project samples\Mvk.Sample.Polling    # пример (опрос 10…1000 Гц)
+dotnet pack ConnectMVKBulder.sln -c Release -o nupkgs   # NuGet-пакеты
 ```
 
 ## Тестовое оборудование
