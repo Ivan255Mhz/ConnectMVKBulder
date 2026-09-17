@@ -2,7 +2,9 @@
 
   <PropertyGroup>
     <RootNamespace>Mvk.Modbus</RootNamespace>
+    <PackageId>Mvk.Modbus</PackageId>
     <Description>Транспорт Modbus/TCP, пул устройств, пайплайн обработки запросов и конфигурация для устройств МВК (NModbus внутри).</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
   <ItemGroup>

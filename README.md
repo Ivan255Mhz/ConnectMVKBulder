@@ -25,8 +25,9 @@
 11. [Логирование и метрики](#логирование-и-метрики)
 12. [Тестирование без железа](#тестирование-без-железа)
 13. [Расширение библиотеки](#расширение-библиотеки)
-14. [Особенности МВК01](#особенности-мвк01)
-15. [Частые вопросы и ошибки](#частые-вопросы-и-ошибки)
+14. [Упаковка и использование в других проектах](#упаковка-и-использование-в-других-проектах)
+15. [Особенности МВК01](#особенности-мвк01)
+16. [Частые вопросы и ошибки](#частые-вопросы-и-ошибки)
 
 ---
 
@@ -914,6 +915,35 @@ public sealed class MyTransportFactory : IMvkTransportFactory
 
 См. раздел [Пайплайн middleware](#пайплайн-middleware): реализуйте `IModbusMiddleware`,
 зарегистрируйте `AddModbusMiddleware<T>("имя")`, добавьте имя в `Pipeline`.
+
+---
+
+## Упаковка и использование в других проектах
+
+Библиотека собирается в NuGet-пакеты `Mvk.Modbus` и `Mvk.MVK01`:
+
+```powershell
+dotnet pack ConnectMVKBulder.sln -c Release -o nupkgs
+```
+
+Подключение к другому решению — разово из папки:
+
+```powershell
+dotnet add C:\Projects\MyApp\MyApp.csproj package Mvk.MVK01 `
+    --version 0.1.0 --source C:\Libraries\ConnectMVKBulder\nupkgs
+```
+
+или через постоянный локальный источник:
+
+```powershell
+dotnet nuget add source C:\Libraries\ConnectMVKBulder\nupkgs -n mvk-local
+dotnet add C:\Projects\MyApp\MyApp.csproj package Mvk.MVK01 --version 0.1.0
+```
+
+Пакет `Mvk.Modbus` подтянется как зависимость; XML-документация (IntelliSense)
+и символы для отладки входят в пакеты. Подробно (версионирование, обновление,
+публикация на сервер/nuget.org, CI, подводные камни) —
+[docs/14-packaging.md](docs/14-packaging.md).
 
 ---
 

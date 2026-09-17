@@ -4,6 +4,7 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>Mvk.Sample.Polling</RootNamespace>
     <Description>Минимальный пример: циклический опрос СКЗ виброускорения 10…1000 Гц.</Description>
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
