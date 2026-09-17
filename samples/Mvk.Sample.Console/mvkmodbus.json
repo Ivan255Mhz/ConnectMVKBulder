@@ -1,0 +1,35 @@
+{
+  "MvkModbus": {
+    "Defaults": {
+      "Port": 502,
+      "SlaveId": 1,
+      "ByteOrder": "BigEndian",
+      "ConnectTimeoutMs": 3000,
+      "ReadTimeoutMs": 2000,
+      "WriteTimeoutMs": 3000,
+      "MaxRetries": 2,
+      "RetryDelayMs": 150,
+      "ReconnectBaseDelayMs": 500,
+      "ReconnectMaxDelayMs": 30000,
+      "IdleDisconnectSeconds": 120,
+      "MaxConcurrentRequests": 1,
+      "WritePolicy": "ProtectConfigArea",
+      "RequireEvenAddressAndQuantity": true
+    },
+    "Pipeline": ["timeout", "logging", "metrics", "validation", "retry", "writeProtection"],
+    "Pool": {
+      "ReconnectEnabled": true,
+      "HealthCheckIntervalSeconds": 15
+    },
+    "Devices": [
+      {
+        "Id": "mvk-1",
+        "Name": "МВК01 стенд",
+        "Host": "10.20.0.211",
+        "Tags": {
+          "asset": "Стенд"
+        }
+      }
+    ]
+  }
+}
