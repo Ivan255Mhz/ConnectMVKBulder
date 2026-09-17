@@ -22,12 +22,13 @@ namespace Mvk.MVK01
         /// </summary>
         /// <param name="pool">Пул устройств.</param>
         /// <param name="textEncoding">
-        /// Кодировка строк устройства; по умолчанию <see cref="Encoding.Latin1"/>.
+        /// Кодировка строк устройства; по умолчанию <see cref="Mvk01Codec.DefaultTextEncoding"/> —
+        /// кодовая страница 1251.
         /// </param>
         public Mvk01DeviceFactory(IMvkDevicePool pool, Encoding? textEncoding = null)
         {
             this.pool = pool ?? throw new ArgumentNullException(nameof(pool));
-            this.textEncoding = textEncoding ?? Encoding.Latin1;
+            this.textEncoding = textEncoding ?? Mvk01Codec.DefaultTextEncoding;
         }
 
         /// <inheritdoc/>
