@@ -1,7 +1,8 @@
 # AGENTS.md — правила работы с проектом ConnectMVKBulder
 
 Библиотека-обёртка для устройства МВК01 (Modbus/TCP, C#/.NET).
-Документация для пользователей: [README.md](README.md).
+Документация для пользователей: [README.md](README.md) (быстрый старт) и
+[docs/README.md](docs/README.md) (полное руководство по главам).
 Roadmap и ключевые решения: [PLAN.md](PLAN.md). Карта регистров: [MVK01_registers.txt](MVK01_registers.txt).
 
 ## Команды
@@ -43,6 +44,7 @@ src/Mvk.MVK01/        — типизированная карта регистр
 tests/Mvk.Testing/    — эмулятор Modbus-slave для тестов
 tests/*.Tests/        — юнит- и интеграционные тесты
 samples/              — примеры использования
+docs/                 — полное руководство (главы по возрастанию сложности)
 ```
 
 ## Ветки
