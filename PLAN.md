@@ -33,7 +33,7 @@ samples/
 
 ## Этапы
 
-- [ ] **Этап 0. Каркас.** Решение, `Directory.Build.props`, проекты, `.gitignore`, сборка зелёная.
+- [x] **Этап 0. Каркас.** Решение, `Directory.Build.props`, проекты, `.gitignore`, сборка зелёная.
 - [ ] **Этап 1. Ядро Mvk.Modbus.** Исключения (`MvkModbusException`, `MvkErrorKind`),
   `ModbusRequest`/`ModbusResponse`/`ModbusOperation`, опции (`MvkModbusOptions`, `MvkDeviceOptions`,
   `MvkDefaultsOptions`), валидация, загрузка JSON.

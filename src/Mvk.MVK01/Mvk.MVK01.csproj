@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Mvk.MVK01</RootNamespace>
+    <Description>Типизированная карта регистров и фасад устройства МВК01.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Mvk.Modbus\Mvk.Modbus.csproj" />
+  </ItemGroup>
+
+</Project>
