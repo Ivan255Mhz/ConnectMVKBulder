@@ -16,6 +16,15 @@
 - Типизированный слой **Mvk.MVK01** по карте регистров (каналы АЦП, тахометры, спектры, конфигурация).
 - Именование: решение `ConnectMVKBulder`, библиотеки `Mvk.Modbus`, `Mvk.MVK01`.
 
+## Особенности МВК01 (проверено на железе 10.20.0.211, ПО 1.0.67.1)
+
+- Чтение работает функциями 0x03 и 0x04; **адрес и число регистров должны быть чётными**
+  (иначе устройство возвращает ошибку Modbus 0x01), максимум 125 регистров за запрос.
+- 32-битные значения (float/uint) занимают два регистра; порядок байт — по регистру 0x000C
+  (BigEndian по умолчанию).
+- Серийный номер — 0x1000 (4 регистра), версия ПО — 0x1004 (2 регистра).
+- Запись регистров, Save и Reboot на реальном устройстве — только с явного разрешения.
+
 ## Принципы простоты (обязательные)
 
 - Простейший сценарий — три строки: `Mvk01Connection.ConnectAsync(host)` → `ReadChannelAsync(1)` → декодированные значения.
@@ -52,8 +61,9 @@ samples/
 - [x] **Этап 2. Транспорт.** `IMvkTransport`, `NModbusTransport` (async, таймауты, ленивое
   подключение, авто-разрыв при ошибке), `RegisterCodec` (Big/Little/Mixed), эмулятор
   `Mvk.Testing` (Modbus-slave и молчащий сервер), тесты против эмулятора.
-- [ ] **Этап 3. Пайплайн.** `ModbusRequestContext`, `InvokeModbusDelegate`, `IModbusMiddleware`,
-  билдер, встроенные middleware: timeout, logging, validation, retry, metrics, writeProtection, caching.
+- [x] **Этап 3. Пайплайн.** `ModbusRequestContext`, `InvokeModbusDelegate`, `IModbusMiddleware`,
+  билдер, встроенные middleware: timeout, logging, validation (в т.ч. чётность адреса/количества),
+  retry, metrics, writeProtection. Кэширование — при необходимости позже.
 - [ ] **Этап 4. Пул устройств.** `IMvkDevice`, `IMvkDevicePool`, `MvkDevice` (сериализация,
   состояния, реконнект), `MvkPoolReconnector` (idle-disconnect, health-check), события состояния.
 - [ ] **Этап 5. DI и конфигурация.** `AddMvkModbus`, hosted-сервисы, пример `mvkmodbus.json`,
@@ -111,7 +121,7 @@ public delegate Task InvokeModbusDelegate(ModbusRequestContext ctx, Cancellation
 
 public interface IModbusMiddleware
 {
-    Task InvokeAsync(ModbusRequestContext ctx, InvokeModbusDelegate next);
+    Task InvokeAsync(ModbusRequestContext ctx, InvokeModbusDelegate next, CancellationToken ct);
 }
 ```
 

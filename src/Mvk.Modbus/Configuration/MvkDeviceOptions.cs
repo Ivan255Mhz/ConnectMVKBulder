@@ -95,6 +95,7 @@ namespace Mvk.Modbus.Configuration
                 WritePolicy = defaults.WritePolicy,
                 ProtectedWriteStartAddress = defaults.ProtectedWriteStartAddress,
                 ProtectedWriteEndAddress = defaults.ProtectedWriteEndAddress,
+                RequireEvenAddressAndQuantity = defaults.RequireEvenAddressAndQuantity,
                 Tags = tags
             };
         }

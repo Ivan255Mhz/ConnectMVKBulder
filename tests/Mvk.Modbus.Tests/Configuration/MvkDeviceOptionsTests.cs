@@ -118,6 +118,16 @@ namespace Mvk.Modbus.Tests.Configuration
         }
 
         [Fact]
+        public void Resolve_RequireEvenAlignment_InheritedFromDefaults()
+        {
+            MvkDefaultsOptions defaults = new() { RequireEvenAddressAndQuantity = true };
+            MvkDeviceOptions device = new() { Id = "mvk-1", Host = "10.20.0.204" };
+
+            Assert.True(device.Resolve(defaults).RequireEvenAddressAndQuantity);
+            Assert.False(device.Resolve(new MvkDefaultsOptions()).RequireEvenAddressAndQuantity);
+        }
+
+        [Fact]
         public void ResolvePipeline_NotConfigured_ReturnsDefaultOrder()
         {
             MvkModbusOptions options = new();
