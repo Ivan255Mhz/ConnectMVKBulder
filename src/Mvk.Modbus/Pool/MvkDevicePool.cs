@@ -16,7 +16,7 @@ namespace Mvk.Modbus.Pool
     /// Пул устройств: конструкции устройств из конфигурации, доступ по идентификатору,
     /// фоновый реконнект и отключение простаивающих соединений.
     /// </summary>
-    public sealed class MvkDevicePool : IMvkDevicePool
+    public sealed class MvkDevicePool : IMvkDevicePool, IDisposable
     {
         private readonly ConcurrentDictionary<string, MvkDevice> devices =
             new(StringComparer.OrdinalIgnoreCase);
@@ -190,6 +190,15 @@ namespace Mvk.Modbus.Pool
 
             devices.Clear();
             maintenanceCancellation.Dispose();
+        }
+
+        /// <summary>
+        /// Синхронно освобождает ресурсы пула (для контейнеров, поддерживающих только
+        /// синхронное освобождение служб).
+        /// </summary>
+        public void Dispose()
+        {
+            DisposeAsync().AsTask().GetAwaiter().GetResult();
         }
 
         private MvkDevice AddCore(MvkDeviceSettings settings, bool requireUnique = false)

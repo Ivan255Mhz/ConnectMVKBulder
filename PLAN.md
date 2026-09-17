@@ -67,8 +67,8 @@ samples/
 - [x] **Этап 4. Пул устройств.** `IMvkDevice`, `IMvkDevicePool`, `MvkDevice` (сериализация,
   состояния, реконнект с backoff), фоновое обслуживание (idle-disconnect, health-check),
   события состояния, `FromJsonFile`, `AddDevice`/`RemoveDevice`. Проверено на реальном МВК01.
-- [ ] **Этап 5. DI и конфигурация.** `AddMvkModbus`, hosted-сервисы, пример `mvkmodbus.json`,
-  тесты биндинга и валидации.
+- [x] **Этап 5. DI и конфигурация.** `AddMvkModbus`, `AddModbusMiddleware<T>`,
+  `AddMvkModbusHostedService`, пример `mvkmodbus.json`, тесты биндинга и валидации.
 - [ ] **Этап 6. Mvk.MVK01.** `Mvk01Connection` (простой вход без конфига), `Mvk01RegisterMap`,
   enums, `Mvk01SpectrumBands`, `Mvk01MeasurementNumber`, `Mvk01Codec`,
   `IMvk01Device`/`IMvk01DeviceFactory` (`ReadDeviceInfoAsync`, `ReadChannelAsync` — снимок канала,
