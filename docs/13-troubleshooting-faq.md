@@ -862,6 +862,13 @@ dotnet run --project samples\Mvk.Sample.Console -- watch      # до Ctrl+C
 dotnet run --project samples\Mvk.Sample.Console -- watch 10   # 10 секунд
 ```
 
+Или минимальный пример опроса полосы 10…1000 Гц:
+
+```powershell
+dotnet run --project samples\Mvk.Sample.Polling                     # до Ctrl+C
+dotnet run --project samples\Mvk.Sample.Polling -- 10.20.0.211 10 1  # хост, секунды, канал
+```
+
 ### 4.17. Где взять адреса регистров?
 
 - `Mvk01RegisterMap` — константы и формулы (`ChannelConfig`, `ChannelData`,

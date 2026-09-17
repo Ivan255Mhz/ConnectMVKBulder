@@ -157,6 +157,13 @@ internal static class Program
 }
 ```
 
+**Готовый пример.** Этот рецепт собран в отдельном проекте `samples/Mvk.Sample.Polling`:
+
+```powershell
+dotnet run --project samples\Mvk.Sample.Polling                    # до Ctrl+C
+dotnet run --project samples\Mvk.Sample.Polling -- 10.20.0.211 10 1 # хост, секунды, канал
+```
+
 **Вариант «минимальный трафик».** Если нужен только один канал, читаем ровно два
 регистра по вычисленному адресу. Смещение набора СКЗ:
 `RmsSetOffset + индекс × RmsSetValues × 2`, где индекс 2 — полоса 10…1000 Гц.

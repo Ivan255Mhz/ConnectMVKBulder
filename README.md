@@ -40,6 +40,7 @@
 | `tests/Mvk.Modbus.Tests` | 123 теста транспорта, пайплайна, пула и конфигурации |
 | `tests/Mvk.MVK01.Tests` | 55 тестов карты регистров, кодеков и фасада |
 | `samples/Mvk.Sample.Console` | Пример: DI + свой middleware + чтение канала и спектра |
+| `samples/Mvk.Sample.Polling` | Минимальный пример: опрос СКЗ 10…1000 Гц в цикле каждые 0,5 с |
 
 Зависимости: [NModbus 3.0.81](https://www.nuget.org/packages/NModbus) (только внутри `Mvk.Modbus`),
 `Microsoft.Extensions.*` (DI, Options, Configuration, Logging, Hosting),
