@@ -80,8 +80,9 @@ samples/
   `IMvk01Device`/`IMvk01DeviceFactory` (`ReadDeviceInfoAsync`, `ReadChannelAsync` — снимок канала,
   `ReadChannelConfigAsync`, `ReadTachoAsync`, чтение по номерам, команды Save/Reboot/Restore
   с ожиданием статуса), `AddMvk01Devices`. Проверено на реальном МВК01.
-- [ ] **Этап 7. Пример.** Консольное приложение: подключение, кастомный middleware, чтение
-  спектра, прогон против эмулятора.
+- [x] **Этап 7. Пример.** Консольное приложение: DI + конфигурация `mvkmodbus.json`, кастомный
+  middleware `audit`, чтение сведений об устройстве, канала, спектра и тахометра;
+  прогон на реальном МВК01 10.20.0.211.
 
 ## Схема конфигурации
 

@@ -15,4 +15,8 @@
     <ProjectReference Include="..\..\src\Mvk.MVK01\Mvk.MVK01.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="mvkmodbus.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
