@@ -1,6 +1,7 @@
 # AGENTS.md — правила работы с проектом ConnectMVKBulder
 
 Библиотека-обёртка для устройства МВК01 (Modbus/TCP, C#/.NET).
+Документация для пользователей: [README.md](README.md).
 Roadmap и ключевые решения: [PLAN.md](PLAN.md). Карта регистров: [MVK01_registers.txt](MVK01_registers.txt).
 
 ## Команды
