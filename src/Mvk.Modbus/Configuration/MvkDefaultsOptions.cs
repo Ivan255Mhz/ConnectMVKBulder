@@ -86,5 +86,11 @@ namespace Mvk.Modbus.Configuration
         /// Конец защищённой области конфигурации (включительно). По умолчанию 0x0FFF.
         /// </summary>
         public ushort ProtectedWriteEndAddress { get; set; } = 0x0FFF;
+
+        /// <summary>
+        /// Требовать чётные адрес и число регистров (особенность МВК01: только 32-битные пары).
+        /// По умолчанию <see langword="false"/>.
+        /// </summary>
+        public bool RequireEvenAddressAndQuantity { get; set; }
     }
 }

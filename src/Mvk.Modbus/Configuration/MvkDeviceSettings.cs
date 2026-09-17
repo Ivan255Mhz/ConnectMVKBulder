@@ -108,6 +108,11 @@ namespace Mvk.Modbus.Configuration
         public required ushort ProtectedWriteEndAddress { get; init; }
 
         /// <summary>
+        /// Требовать чётные адрес и число регистров (особенность МВК01).
+        /// </summary>
+        public required bool RequireEvenAddressAndQuantity { get; init; }
+
+        /// <summary>
         /// Произвольные метки устройства.
         /// </summary>
         public required IReadOnlyDictionary<string, string> Tags { get; init; }
