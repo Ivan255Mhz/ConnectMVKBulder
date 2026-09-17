@@ -720,6 +720,16 @@ Mvk01Channel snapshot = await mvk.Device.ReadChannelAsync(1, cts.Token);
 float value = snapshot.RmsSets[2].Acceleration;   // 10…1000 Гц
 ```
 
+### Готовый пример в репозитории
+
+Режим `watch` консольного примера опрашивает СКЗ 10…1000 Гц по всем 8 каналам
+каждые 0,5 с (без ограничения по времени, остановка — Ctrl+C или аргумент с секундами):
+
+```powershell
+dotnet run --project samples\Mvk.Sample.Console -- watch      # до Ctrl+C
+dotnet run --project samples\Mvk.Sample.Console -- watch 10   # 10 секунд
+```
+
 ### Замечания
 
 - Для стабильного периода используйте `PeriodicTimer`, а не `Task.Delay` —
