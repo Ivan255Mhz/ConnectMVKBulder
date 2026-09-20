@@ -671,8 +671,8 @@ if (result.Status == Mvk01CommandStatus.TransportError && result.Error is not nu
   `PostConfigure` (см. раздел 7).
 - При ручной сборке пула/конфигурации разрешение нужно выставить явно.
 
-На реальном стенде `Save`/`Reboot`/`Restore` выполнять только с явного разрешения
-(см. AGENTS.md). Для проверки алгоритма используйте эмулятор `Mvk.Testing`:
+На реальном стенде `Save`/`Reboot`/`Restore` выполнять только с явного разрешения.
+Для проверки алгоритма используйте эмулятор `Mvk.Testing`:
 в тестах `SaveConfigurationAsync_WritesCommandAndReadsSuccessStatus`,
 `ExecuteSystemCommandAsync_BadCommandStatus_ReturnsBadCommand`,
 `ExecuteSystemCommandAsync_FlashError_ReturnsFlashError`,
@@ -1263,9 +1263,8 @@ Mvk01CommandResult result = await device.ExecuteSystemCommandAsync(
 - **Отмена — это `OperationCanceledException`**, а не `MvkModbusException`;
   в цикле опроса её обрабатывают отдельно (через `WaitForNextTickAsync` или
   `catch (OperationCanceledException)`).
-- **Save/Reboot/Restore на реальном железе** — только с явного разрешения
-  (AGENTS.md): команды меняют энергонезависимую конфигурацию и перезапускают
-  устройство.
+- **Save/Reboot/Restore на реальном железе** — только с явного разрешения:
+  команды меняют энергонезависимую конфигурацию и перезапускают устройство.
 
 ---
 

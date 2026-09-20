@@ -1759,7 +1759,7 @@ MD5 ПО DSP  : 000102030405060708090a0b0c0d0e0f
 регистре hex. Биты системных ошибок: 0 — приём от DSP, 1–3 — SD-карта,
 4 — отправка к DSP, 5 — инициализация Modbus/TCP, 6 — CRC конфигурации.
 Для быстрой проверки доступности без чтения достаточно `EnsureConnectedAsync()`
-или `Test-NetConnection host -Port 502` (см. `AGENTS.md`).
+или `Test-NetConnection host -Port 502`.
 
 **Предостережения.**
 

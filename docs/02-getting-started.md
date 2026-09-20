@@ -1,4 +1,4 @@
-# Глава 2. Первое подключение
+﻿# Глава 2. Первое подключение
 
 Цель главы — от нуля дойти до работающего приложения: подключиться к МВК01,
 прочитать декодированные значения, затем перейти к нескольким устройствам из
@@ -720,5 +720,3 @@ builder.Services.AddModbusMiddleware<AuditMiddleware>("audit"); // до builder.
 - [Глава 3. Конфигурация](03-configuration.md)
 - [Глава 7b. Фасад МВК01](07b-mvk01-device-facade.md)
 - [README.md](../README.md)
-- [PLAN.md](../PLAN.md)
-- [AGENTS.md](../AGENTS.md)
