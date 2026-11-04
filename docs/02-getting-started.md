@@ -137,7 +137,8 @@ public static Task<Mvk01Connection> ConnectAsync(
     string host,
     int port = 502,
     byte slaveId = 1,
-    CancellationToken cancellationToken = default)
+    CancellationToken cancellationToken = default,
+    bool allowConfigurationWrite = false)
 ```
 
 - `port` и `slaveId` можно не указывать — примут значения 502 и 1;
@@ -149,9 +150,10 @@ public static Task<Mvk01Connection> ConnectAsync(
   соединение и освобождает пул устройств.
 
 `Mvk01Connection` — это обёртка над пулом, состоящим из одного устройства:
-дополнительно включаются правила МВК01 (`RequireEvenAddressAndQuantity = true`)
-и разрешается запись конфигурации (`AllowConfigurationWrite = true`, нужно для
-системных команд). Идентификатор устройства внутри пула равен строке `host`.
+дополнительно включается правило МВК01 (`RequireEvenAddressAndQuantity = true`).
+Запись конфигурации по умолчанию запрещена; для системных команд используйте
+`ConnectAsync(..., allowConfigurationWrite: true)`. Идентификатор устройства
+внутри пула равен строке `host`.
 
 ### 2.2.3. Шаг 2. Сведения об устройстве
 
@@ -505,8 +507,9 @@ await host.StopAsync();
 Важные правила:
 
 - порядок вызовов: сначала `AddMvkModbus`, затем `AddMvk01Devices`;
-- `AddMvk01Devices()` через `PostConfigure` включает обязательные для МВК01
-  настройки: `RequireEvenAddressAndQuantity = true` и `AllowConfigurationWrite = true`;
+- `AddMvk01Devices()` через `PostConfigure` включает обязательную для МВК01
+  настройку `RequireEvenAddressAndQuantity = true`; запись конфигурации
+  по умолчанию запрещена и включается явно (`Defaults.AllowConfigurationWrite = true`);
 - собственные middleware регистрируются до `builder.Build()`:
   `builder.Services.AddModbusMiddleware<AuditMiddleware>("audit")`, а имя `"audit"`
   добавляется в список `Pipeline` (см. [главу 6](06-pipeline-middleware.md));
@@ -699,9 +702,10 @@ builder.Services.AddModbusMiddleware<AuditMiddleware>("audit"); // до builder.
 - **Снимок канала — не атомарный.** Это 5 последовательных запросов; при
   активном измерении значения между ними могут обновиться. Для согласованного
   набора читайте один параметр по номеру одним запросом.
-- **`Mvk01Connection` разрешает запись конфигурации** (`AllowConfigurationWrite = true`),
-  потому что иначе не работают `SaveConfigurationAsync` и другие системные
-  команды. На реальном устройстве не вызывайте `SaveConfigurationAsync`,
+- **`Mvk01Connection` по умолчанию работает только на чтение**
+  (`AllowConfigurationWrite = false`). Для `SaveConfigurationAsync` и других
+  системных команд используйте `ConnectAsync(..., allowConfigurationWrite: true)`.
+  На реальном устройстве не вызывайте `SaveConfigurationAsync`,
   `RestoreConfigurationAsync`, `RebootAsync` и запись регистров без явного
   разрешения (см. [главу 1, раздел 1.9](01-introduction.md)).
 - **При ручной сборке пула включите правило МВК01.** `new MvkDevicePool(options)`

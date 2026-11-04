@@ -560,10 +560,11 @@ request.StartAddress <= settings.ProtectedWriteEndAddress
 - Нарушение политики возвращается как ответ с ошибкой `MvkErrorKind.Validation`
   (свойство `Error` у `ModbusResponse`); удобные обёртки
   (`WriteSingleRegisterAsync` и т.п.) выбрасывают `MvkModbusException`.
-- `AddMvk01Devices()` в DI принудительно включает
-  `Defaults.AllowConfigurationWrite = true` и
+- `AddMvk01Devices()` в DI принудительно включает только
   `Defaults.RequireEvenAddressAndQuantity = true` на этапе `PostConfigure`.
-  Значение можно сузить на уровне устройства: `"AllowConfigurationWrite": false`.
+  `AllowConfigurationWrite` по умолчанию `false`; включите его явно:
+  `"Defaults": { "AllowConfigurationWrite": true }`. Значение можно сузить
+  на уровне устройства.
 
 Примеры.
 
@@ -931,9 +932,9 @@ catch (MvkModbusException ex) when (ex.ErrorKind == MvkErrorKind.Configuration)
 
 `AllowConfigurationWrite: true` нужен только там, где приложение действительно
 пишет конфигурацию (каналы, коэффициенты, системные команды Save/Reboot).
-Для мониторинга «только чтение» оставьте `false`. При использовании DI
-`AddMvk01Devices()` всё равно выставит `true` в `Defaults` — точечно запретить
-запись можно на устройстве (`"AllowConfigurationWrite": false`).
+Для мониторинга «только чтение» оставьте `false`. `AddMvk01Devices()` не
+включает запись автоматически — её нужно разрешить явно в `Defaults` или
+на уровне устройства.
 
 ### Несколько устройств (3 МВК + ВДМ82)
 
@@ -1180,10 +1181,9 @@ Modbus/TCP — последовательный протокол: устройс
 - **Pipeline учитывается только в DI.** `MvkDevicePool`/`FromJsonFile` всегда
   используют набор middleware по умолчанию; имена из секции `Pipeline` там
   не применяются и не проверяются.
-- **AddMvk01Devices переопределяет Defaults.** `PostConfigure` принудительно
-  выставляет `RequireEvenAddressAndQuantity = true` и
-  `AllowConfigurationWrite = true`, перезаписывая значения из файла
-  (сузить можно на уровне устройства).
+- **AddMvk01Devices задаёт только чётность.** `PostConfigure` принудительно
+  выставляет `RequireEvenAddressAndQuantity = true`. `AllowConfigurationWrite`
+  не переопределяется: по умолчанию остаётся `false`, если не задан явно.
 - **Поля устройства — только пять.** Таймауты, ретраи, `WritePolicy`,
   защищённая область и `IdleDisconnectSeconds` переопределить у отдельного
   устройства нельзя — они общие для пула.

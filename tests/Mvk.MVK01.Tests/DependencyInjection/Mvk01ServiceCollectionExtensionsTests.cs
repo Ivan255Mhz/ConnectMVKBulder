@@ -10,7 +10,7 @@ namespace Mvk.MVK01.Tests.DependencyInjection
     public sealed class Mvk01ServiceCollectionExtensionsTests
     {
         [Fact]
-        public void AddMvk01Devices_RegistersFactoryAndEnablesDeviceDefaults()
+        public void AddMvk01Devices_RegistersFactoryAndEnablesRequiredDefaults()
         {
             ServiceCollection services = new();
             services.AddLogging();
@@ -30,7 +30,27 @@ namespace Mvk.MVK01.Tests.DependencyInjection
 
             MvkModbusOptions options = provider.GetRequiredService<IOptions<MvkModbusOptions>>().Value;
             Assert.True(options.Defaults.RequireEvenAddressAndQuantity);
-            Assert.True(options.Defaults.AllowConfigurationWrite);
+            Assert.False(options.Defaults.AllowConfigurationWrite);
+        }
+
+        [Fact]
+        public void AddMvk01Devices_ExplicitWritePermission_IsPreserved()
+        {
+            ServiceCollection services = new();
+            services.AddLogging();
+            services.AddMvkModbus(options =>
+            {
+                options.Defaults.AllowConfigurationWrite = true;
+                options.Devices = [new MvkDeviceOptions { Id = "mvk-1", Host = "10.20.0.211" }];
+            });
+            services.AddMvk01Devices();
+
+            using ServiceProvider provider = services.BuildServiceProvider();
+
+            IMvk01DeviceFactory factory = provider.GetRequiredService<IMvk01DeviceFactory>();
+            IMvk01Device device = factory.GetDevice("mvk-1");
+
+            Assert.True(device.Settings.AllowConfigurationWrite);
         }
 
         [Fact]

@@ -665,9 +665,10 @@ MvkModbusException? denial = WriteProtectionMiddleware.Check(context);
 ```
 
 Отличие от validation: проверка зависит от `Settings.WritePolicy`, а не от общего
-устройства запроса, поэтому живёт в отдельном middleware. Для МВК01
-`AddMvk01Devices()` включает `AllowConfigurationWrite = true` — иначе команды
-`SaveConfiguration`/`Reboot` не прошли бы защиту.
+устройства запроса, поэтому живёт в отдельном middleware. Для МВК01 запись
+включается явно (`AllowConfigurationWrite = true` или
+`ConnectAsync(..., allowConfigurationWrite: true)`) — иначе команды
+`SaveConfiguration`/`Reboot` не пройдут защиту.
 
 **Взаимодействие.** Стоит самым внутренним (перед терминалом) в порядке по умолчанию:
 политика проверяется непосредственно перед обращением к сокету на каждой попытке.

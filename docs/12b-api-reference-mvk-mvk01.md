@@ -1115,12 +1115,13 @@ public sealed class Mvk01Connection : IAsyncDisposable
 
 Простейшая точка входа для одного устройства: подключение по адресу без конфигурации.
 Создаёт собственный `MvkDevicePool` с `RequireEvenAddressAndQuantity = true`,
-`AllowConfigurationWrite = true` и `Pool.ReconnectEnabled = true`; устройство
-регистрируется с `Id = Name = Host = host.Trim()`.
+`AllowConfigurationWrite = allowConfigurationWrite` (по умолчанию `false`) и
+`Pool.ReconnectEnabled = true`; устройство регистрируется с
+`Id = Name = Host = host.Trim()`.
 
 | Сигнатура | Описание |
 |---|---|
-| `public static Task<Mvk01Connection> ConnectAsync(string host, int port = 502, byte slaveId = 1, CancellationToken cancellationToken = default)` | Подключается к устройству МВК01 по адресу и проверяет связь; пустой `host` — `ArgumentException`, недоступное устройство — `MvkModbusException`; при сбое пул освобождается |
+| `public static Task<Mvk01Connection> ConnectAsync(string host, int port = 502, byte slaveId = 1, CancellationToken cancellationToken = default, bool allowConfigurationWrite = false)` | Подключается к устройству МВК01 по адресу и проверяет связь; пустой `host` — `ArgumentException`, недоступное устройство — `MvkModbusException`; при сбое пул освобождается. `allowConfigurationWrite` разрешает запись в защищённую область и системные команды |
 | `public IMvk01Device Device { get; }` | Типизированное устройство (доступ к расширенному API и событиям состояния) |
 | `public Task<Mvk01DeviceInfo> ReadDeviceInfoAsync(CancellationToken cancellationToken = default)` | Читает общие сведения об устройстве |
 | `public Task<Mvk01Channel> ReadChannelAsync(int channel, CancellationToken cancellationToken = default)` | Читает полный снимок канала АЦП |
@@ -1215,16 +1216,15 @@ public static class Mvk01ServiceCollectionExtensions
 
 | Сигнатура | Описание |
 |---|---|
-| `public static IServiceCollection AddMvk01Devices(this IServiceCollection services)` | Регистрирует фабрику типизированных устройств МВК01 и включает обязательные для устройства настройки; `services == null` — `ArgumentNullException` |
+| `public static IServiceCollection AddMvk01Devices(this IServiceCollection services)` | Регистрирует фабрику типизированных устройств МВК01 и включает обязательную настройку чётности; `services == null` — `ArgumentNullException` |
 
 Что делает метод:
 
 1. добавляет `PostConfigure<MvkModbusOptions>`, который после обычной конфигурации
-   принудительно выставляет:
-   - `options.Defaults.RequireEvenAddressAndQuantity = true` — чётные адрес
-     и количество регистров (требование устройства);
-   - `options.Defaults.AllowConfigurationWrite = true` — разрешение записи
-     конфигурации (команды Save/Restore/Reboot);
+   принудительно выставляет `options.Defaults.RequireEvenAddressAndQuantity = true`
+   — чётные адрес и количество регистров (требование устройства).
+   `AllowConfigurationWrite` не меняется: запись по умолчанию запрещена и
+   включается явно (`Defaults.AllowConfigurationWrite = true`);
 2. регистрирует `IMvk01DeviceFactory` как singleton через `TryAddSingleton`:
    `new Mvk01DeviceFactory(provider.GetRequiredService<IMvkDevicePool>())`
    (кодировка по умолчанию — `Mvk01Codec.DefaultTextEncoding`, cp1251).
@@ -1247,6 +1247,120 @@ await host.StartAsync();
 IMvk01DeviceFactory factory = host.Services.GetRequiredService<IMvk01DeviceFactory>();
 IMvk01Device device = factory.GetDevice("mvk-1");
 Mvk01Channel channel = await device.ReadChannelAsync(1);
+```
+
+---
+
+## 9. Mvk.MVK01.Polling
+
+Типы для периодического наблюдения за параметрами. Объявлены в
+`src/Mvk.MVK01/Polling`. Это надстройка над `IMvk01Device`, низкоуровневый
+API остаётся доступен.
+
+### 9.1 `Mvk01PollItem` (`sealed record`)
+
+```csharp
+namespace Mvk.MVK01.Polling;
+
+public sealed record Mvk01PollItem
+{
+    public Mvk01PollItem(Mvk01MeasurementNumber number, int? channel = null);
+
+    public Mvk01MeasurementNumber Number { get; }
+    public int? Channel { get; }
+}
+```
+
+| Сигнатура | Описание |
+|---|---|
+| `public Mvk01PollItem(Mvk01MeasurementNumber number, int? channel = null)` | Наблюдаемый параметр; `number` — 1–184, `channel` — 1–8 или `null` для всех каналов |
+| `public Mvk01MeasurementNumber Number { get; }` | Номер параметра |
+| `public int? Channel { get; }` | Выбранный канал для `Mvk01Sample.ChannelValue` |
+
+`number` вне 1–184 или `channel` вне 1–8 — `ArgumentOutOfRangeException`.
+
+### 9.2 `Mvk01Sample` (`sealed record`)
+
+```csharp
+public sealed record Mvk01Sample
+{
+    public required DateTimeOffset Timestamp { get; init; }
+    public required Mvk01PollItem Item { get; init; }
+    public required float[] Values { get; init; }
+    public MvkModbusException? Error { get; init; }
+
+    public bool IsSuccess { get; }
+    public float? ChannelValue { get; }
+}
+```
+
+| Сигнатура | Описание |
+|---|---|
+| `DateTimeOffset Timestamp` | Время получения результата (UTC) |
+| `Mvk01PollItem Item` | Наблюдаемый параметр |
+| `float[] Values` | Значения по всем 8 каналам; при ошибке — пустой массив |
+| `MvkModbusException? Error` | Ошибка обращения либо `null` при успехе |
+| `bool IsSuccess` | `Error is null` |
+| `float? ChannelValue` | Значение `Item.Channel` либо `null`, если канал не задан или данных нет |
+
+### 9.3 `Mvk01Watcher` (`sealed class`)
+
+```csharp
+public sealed class Mvk01Watcher
+{
+    public Mvk01Watcher(IMvk01Device device);
+    public Mvk01Watcher(IMvk01Device device, TimeSpan interval);
+
+    public IMvk01Device Device { get; }
+    public TimeSpan Interval { get; }
+
+    public IAsyncEnumerable<Mvk01Sample> WatchAsync(
+        Mvk01PollItem item,
+        CancellationToken cancellationToken = default);
+
+    public IAsyncEnumerable<Mvk01Sample> WatchAsync(
+        IReadOnlyList<Mvk01PollItem> items,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default);
+}
+```
+
+| Сигнатура | Описание |
+|---|---|
+| `public Mvk01Watcher(IMvk01Device device)` | Интервал по умолчанию — 500 мс; `device == null` — `ArgumentNullException` |
+| `public Mvk01Watcher(IMvk01Device device, TimeSpan interval)` | `interval <= 0` — `ArgumentOutOfRangeException` |
+| `public IMvk01Device Device { get; }` | Наблюдаемое устройство |
+| `public TimeSpan Interval { get; }` | Интервал между циклами |
+| `WatchAsync(Mvk01PollItem item, ...)` | Наблюдение за одним параметром; `item == null` — `ArgumentNullException` |
+| `WatchAsync(IReadOnlyList<Mvk01PollItem> items, ...)` | Наблюдение за набором; пустой список или `null`-элемент — `ArgumentException` |
+
+Поведение:
+
+- первый опрос выполняется сразу;
+- интервал отсчитывается от начала цикла; если опрос дольше интервала,
+  следующий цикл начинается сразу, но запросы не накладываются;
+- за один цикл выполняется по одному запросу `ReadMeasurementByNumberAsync`
+  на каждый элемент списка; результаты возвращаются по мере готовности;
+- `MvkModbusException` передаётся в `Mvk01Sample.Error`, поток продолжается;
+- отмена токена приводит к `OperationCanceledException`;
+- `Values` всегда содержит 8 значений, даже если выбран один канал.
+
+```csharp
+using Mvk.MVK01.Polling;
+
+Mvk01Watcher watcher = new(device, TimeSpan.FromMilliseconds(500));
+
+await foreach (Mvk01Sample sample in watcher.WatchAsync(
+    new Mvk01PollItem(Mvk01MeasurementNumber.Rms10To1000Acceleration, channel: 1),
+    cancellationToken))
+{
+    if (sample.Error is { } error)
+    {
+        Console.WriteLine($"ошибка: {error.ErrorKind} — {error.Message}");
+        continue;
+    }
+
+    Console.WriteLine($"{sample.Timestamp.ToLocalTime():HH:mm:ss.fff}  {sample.ChannelValue:F4} м/с2");
+}
 ```
 
 ---

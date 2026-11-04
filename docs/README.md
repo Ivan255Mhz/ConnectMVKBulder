@@ -18,7 +18,7 @@
 | 05 | [Пул устройств](05-device-pool.md) | средний | `IMvkDevicePool`/`IMvkDevice`, состояния и события, реконнект, idle-отключение, масштаб |
 | 06 | [Пайплайн middleware](06-pipeline-middleware.md) | продвинутый | контракты, `ModbusRequestContext`, встроенные middleware, свои обработчики, порядок |
 | 07a | [Карта регистров и кодеки МВК01](07a-mvk01-register-map-and-codec.md) | справочный | адресное пространство, все константы и формулы, перечисления, спектральные полосы, `Mvk01Codec` |
-| 07b | [Фасад МВК01](07b-mvk01-device-facade.md) | средний | `IMvk01Device`: снимки канала и тахометра, параметры по номерам, системные команды, фабрика и DI |
+| 07b | [Фасад МВК01](07b-mvk01-device-facade.md) | средний | `IMvk01Device`: снимки канала и тахометра, параметры по номерам, системные команды, фабрика, DI и `Mvk01Watcher` |
 | 08 | [Ошибки, логирование и метрики](08-errors-logging-metrics.md) | средний | `MvkModbusException`, карта ошибок, стратегии обработки, `ILogger`, метрики `Mvk.Modbus` |
 | 09 | [Тестирование без железа](09-testing.md) | средний | `MvkTestServer`, `SilentTcpServer`, `FakeModbusTransport`, готовые xunit-сценарии |
 | 10 | [Расширение и интеграция](10-extensibility.md) | продвинутый | свой транспорт и middleware, фоновые службы, WPF, ASP.NET Core, несколько пулов |

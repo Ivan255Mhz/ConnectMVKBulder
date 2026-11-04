@@ -932,7 +932,7 @@ public sealed class DeviceTimeoutTests
 | `Transport/NModbusTransportTests.cs` | транспорт против `MvkTestServer` и `SilentTcpServer`, переподключение, `MapException` |
 | `TestDeviceSettings.cs`, `FakeTransport.cs` | внутренние помощники тест-проекта: быстрые настройки и транспорт с задержкой/счётчиками |
 
-`tests/Mvk.MVK01.Tests` — 55 тестов (27 `[Fact]` + 10 `[Theory]` c 28
+`tests/Mvk.MVK01.Tests` — 79 тестов (45 `[Fact]` + 13 `[Theory]` c 34
 вариантами `[InlineData]`):
 
 | Файл | Что покрыто |
@@ -940,7 +940,9 @@ public sealed class DeviceTimeoutTests
 | `Mvk01RegisterMapTests.cs` | адреса каналов, тахометров, параметров по номерам |
 | `Mvk01CodecTests.cs` | версия ПО, битовые поля, cp1251 и swap-строки, команды |
 | `Mvk01DeviceTests.cs` | снимки канала/тахометра/конфигурации, параметры по номерам, команды |
-| `DependencyInjection/Mvk01ServiceCollectionExtensionsTests.cs` | `AddMvk01Devices`, фабрика, включение чётности и записи конфигурации |
+| `Mvk01ConnectionTests.cs` | режим «только чтение» по умолчанию, opt-in запись, защищённая область, Save без разрешения |
+| `Polling/Mvk01WatcherTests.cs` | периодический опрос, интервал, ошибки, отмена, валидация |
+| `DependencyInjection/Mvk01ServiceCollectionExtensionsTests.cs` | `AddMvk01Devices`, фабрика, чётность; запись по умолчанию запрещена |
 
 Пакеты тестов одинаковые в обоих проектах: `xunit` 2.5.3,
 `Microsoft.NET.Test.Sdk` 17.8.0, `xunit.runner.visualstudio` 2.5.3,

@@ -413,9 +413,11 @@ Save/Reboot без явного разрешения и учтите, что к�
 Разрешить запись можно тремя способами:
 
 ```csharp
-// 1. В DI — «обязательная» настройка типизированного слоя:
+// 1. В DI — разрешить запись явно:
 builder.Services.AddMvkModbus(builder.Configuration);
-builder.Services.AddMvk01Devices();   // выставляет RequireEvenAddressAndQuantity и AllowConfigurationWrite
+builder.Services.Configure<MvkModbusOptions>(options =>
+    options.Defaults.AllowConfigurationWrite = true);
+builder.Services.AddMvk01Devices();   // выставляет только RequireEvenAddressAndQuantity
 ```
 
 ```json
@@ -554,7 +556,8 @@ catch (MvkModbusException ex)
 using Mvk.MVK01;
 
 await using Mvk01Connection mvk = await Mvk01Connection.ConnectAsync("10.20.0.211");
-// порт 502, SlaveId 1, BigEndian, RequireEvenAddressAndQuantity, AllowConfigurationWrite
+// порт 502, SlaveId 1, BigEndian, RequireEvenAddressAndQuantity;
+// запись по умолчанию запрещена (AllowConfigurationWrite = false)
 
 Mvk01DeviceInfo info = await mvk.ReadDeviceInfoAsync();
 Mvk01Channel channel = await mvk.ReadChannelAsync(1);
@@ -722,7 +725,8 @@ for (int band = 1; band <= Mvk01SpectrumBands.Count; band++)
 
 Только при явном понимании последствий и разрешении на запись. Порядок действий:
 
-1. разрешить запись (`AddMvk01Devices()` или `AllowConfigurationWrite: true`);
+1. разрешить запись явно (`AllowConfigurationWrite: true` в конфигурации или
+   `ConnectAsync(..., allowConfigurationWrite: true)`);
 2. сформировать 32-битные значения в порядке байт устройства
    (`RegisterCodec.FromSingle`/`FromUInt32`);
 3. записать чётное число регистров по чётному адресу;

@@ -45,7 +45,7 @@ public sealed class Mvk01Connection : IAsyncDisposable
 
 | Член | Тип | Описание |
 |---|---|---|
-| `ConnectAsync(host, port = 502, slaveId = 1, ct)` | `static Task<Mvk01Connection>` | Подключиться и проверить связь |
+| `ConnectAsync(host, port = 502, slaveId = 1, ct, allowConfigurationWrite = false)` | `static Task<Mvk01Connection>` | Подключиться и проверить связь; запись конфигурации по умолчанию запрещена |
 | `Device` | `IMvk01Device` | Типизированное устройство (расширенный API и события) |
 | `ReadDeviceInfoAsync(ct)` | `Task<Mvk01DeviceInfo>` | Общие сведения об устройстве |
 | `ReadChannelAsync(channel, ct)` | `Task<Mvk01Channel>` | Полный снимок канала АЦП |
@@ -68,7 +68,8 @@ public static async Task<Mvk01Connection> ConnectAsync(
     string host,
     int port = 502,
     byte slaveId = 1,
-    CancellationToken cancellationToken = default)
+    CancellationToken cancellationToken = default,
+    bool allowConfigurationWrite = false)
 ```
 
 Алгоритм:
@@ -81,7 +82,7 @@ public static async Task<Mvk01Connection> ConnectAsync(
    | `Defaults.Port` | `port` (по умолчанию 502) | TCP-порт Modbus |
    | `Defaults.SlaveId` | `slaveId` (по умолчанию 1) | Идентификатор Modbus |
    | `Defaults.RequireEvenAddressAndQuantity` | `true` | МВК01 принимает только чётные адрес и количество регистров |
-   | `Defaults.AllowConfigurationWrite` | `true` | Иначе не пройдут системные команды (запись в `0x0002`) |
+   | `Defaults.AllowConfigurationWrite` | `allowConfigurationWrite` (по умолчанию `false`) | Запись в конфигурацию и системные команды — только при явном разрешении |
    | `Pool.ReconnectEnabled` | `true` | Фоновый реконнект при обрыве |
    | `Devices[0].Id/Name/Host` | `host.Trim()` | Идентификатор устройства — сам адрес |
 
@@ -666,9 +667,10 @@ if (result.Status == Mvk01CommandStatus.TransportError && result.Error is not nu
 }
 ```
 
-- `Mvk01Connection.ConnectAsync` устанавливает `AllowConfigurationWrite = true` сам.
-- `AddMvk01Devices()` включает `AllowConfigurationWrite = true` через
-  `PostConfigure` (см. раздел 7).
+- `Mvk01Connection.ConnectAsync` по умолчанию оставляет `AllowConfigurationWrite = false`;
+  для системных команд используйте `ConnectAsync(..., allowConfigurationWrite: true)`.
+- `AddMvk01Devices()` не включает запись; задайте
+  `Defaults.AllowConfigurationWrite = true` в конфигурации или коде.
 - При ручной сборке пула/конфигурации разрешение нужно выставить явно.
 
 На реальном стенде `Save`/`Reboot`/`Restore` выполнять только с явного разрешения.
@@ -841,11 +843,11 @@ public static IServiceCollection AddMvk01Devices(this IServiceCollection service
 Что делает:
 
 1. `services.AddOptions<MvkModbusOptions>().PostConfigure(...)` — после всех
-   `Configure`-вызовов принудительно выставляет:
-   - `Defaults.RequireEvenAddressAndQuantity = true` (чётность адреса и количества
-     регистров — требование МВК01);
-   - `Defaults.AllowConfigurationWrite = true` (разрешение записи в защищённую
-     область для команд Save/Restore/Reboot).
+   `Configure`-вызовов принудительно выставляет
+   `Defaults.RequireEvenAddressAndQuantity = true` (чётность адреса и количества
+   регистров — требование МВК01). Запись в защищённую область не включается:
+   для команд Save/Restore/Reboot задайте `Defaults.AllowConfigurationWrite = true`
+   явно.
 2. `TryAddSingleton<IMvk01DeviceFactory>(...)` — регистрирует
    `new Mvk01DeviceFactory(provider.GetRequiredService<IMvkDevicePool>())`.
    `TryAdd` означает: если `IMvk01DeviceFactory` уже зарегистрирована (например,
@@ -887,6 +889,10 @@ if (mvk is not null)
 await host.StopAsync();
 ```
 
+Если приложению нужны `Save/Restore/Reboot`, разрешите запись явно:
+`options.Defaults.AllowConfigurationWrite = true` в `AddMvkModbus(...)` или
+`"Defaults": { "AllowConfigurationWrite": true }` в JSON.
+
 Если нужна другая кодировка строк, зарегистрируйте фабрику сами
 **до** `AddMvk01Devices()`:
 
@@ -918,6 +924,9 @@ builder.Services.AddMvk01Devices();         // TryAddSingleton не переза
 согласованы между каналами (один параметр — один запрос).
 
 ### 8.2 Периодический опрос: готовый паттерн
+
+Ручной вариант с `PeriodicTimer`; в большинстве приложений проще
+`Mvk01Watcher` из раздела 8.4.
 
 ```csharp
 using System;
@@ -966,6 +975,95 @@ while (await timer.WaitForNextTickAsync(cts.Token))
   согласованного набора используйте параметр по номеру.
 - **Не дублируйте чтение.** Один `ReadMeasurementByNumberAsync(55)` уже вернул
   значения по всем каналам — не вызывайте его в цикле по каналам.
+
+### 8.4 `Mvk01Watcher` — наблюдение без boilerplate
+
+`Mvk01Watcher` инкапсулирует периодический опрос: интервал, отмену,
+обработку ошибок и доступ к значениям каналов. Это надстройка над
+`ReadMeasurementByNumberAsync`, низкоуровневый API остаётся доступен.
+
+```csharp
+using Mvk.MVK01.Polling;
+
+Mvk01Watcher watcher = new(device, TimeSpan.FromMilliseconds(500));
+Mvk01PollItem item = new(
+    Mvk01MeasurementNumber.Rms10To1000Acceleration,
+    channel: 1);
+
+await foreach (Mvk01Sample sample in watcher.WatchAsync(item, cts.Token))
+{
+    if (sample.Error is { } error)
+    {
+        // Ошибка связи: наблюдение продолжается, реконнект идёт автоматически.
+        Console.WriteLine($"{sample.Timestamp.ToLocalTime():HH:mm:ss.fff}  ошибка: {error.ErrorKind}");
+        continue;
+    }
+
+    Console.WriteLine($"{sample.Timestamp.ToLocalTime():HH:mm:ss.fff}  {sample.ChannelValue:F4} м/с2");
+}
+```
+
+Несколько параметров за один цикл:
+
+```csharp
+Mvk01PollItem[] items =
+[
+    new(Mvk01MeasurementNumber.Rms10To1000Acceleration, channel: 1),
+    new(Mvk01MeasurementNumber.RmsX25kHzAcceleration, channel: 1)
+];
+
+await foreach (Mvk01Sample sample in watcher.WatchAsync(items, cts.Token))
+{
+    Console.WriteLine($"{sample.Item.Number}: {sample.ChannelValue:F4}");
+}
+```
+
+Поведение:
+
+| Свойство | Значение |
+|---|---|
+| Первый опрос | Сразу, не через интервал |
+| Интервал | От начала цикла; при перегрузке следующий цикл начинается сразу, без наложения запросов |
+| `Mvk01Sample.Values` | Всегда 8 значений — параметр читается одним запросом по всем каналам |
+| `Mvk01Sample.ChannelValue` | Значение выбранного `Item.Channel` либо `null` при ошибке |
+| Ошибки | Приходят в `Mvk01Sample.Error`; поток продолжается |
+| Отмена | `OperationCanceledException` наружу, как у обычного `IAsyncEnumerable` |
+| Поток | Один активный `await foreach` на устройство; для нескольких устройств — отдельные watcher'ы |
+
+`Mvk01Watcher` не создаёт соединение сам: первый запрос лениво подключается
+через `IMvk01Device`, а реконнект выполняет пул. Watcher опрашивает параметры
+по номерам (`ReadMeasurementByNumberAsync`); для полного снимка канала со
+спектром и состоянием используйте `ReadChannelAsync` в собственном цикле —
+это другой профиль нагрузки (5 запросов вместо одного).
+
+В фоновой службе:
+
+```csharp
+public sealed class Mvk01PollingService : BackgroundService
+{
+    private readonly IMvk01DeviceFactory factory;
+    private readonly ILogger<Mvk01PollingService> logger;
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        IMvk01Device device = factory.GetDevice("mvk-1");
+        Mvk01Watcher watcher = new(device, TimeSpan.FromMilliseconds(500));
+
+        await foreach (Mvk01Sample sample in watcher.WatchAsync(
+            new Mvk01PollItem(Mvk01MeasurementNumber.Rms10To1000Acceleration, 1),
+            stoppingToken))
+        {
+            if (sample.Error is { } error)
+            {
+                logger.LogWarning("МВК: {ErrorKind} — {Message}", error.ErrorKind, error.Message);
+                continue;
+            }
+
+            logger.LogInformation("СКЗ 10…1000 Гц: {Value:F4} м/с2", sample.ChannelValue);
+        }
+    }
+}
+```
 
 ---
 

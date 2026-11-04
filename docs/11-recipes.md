@@ -41,7 +41,7 @@
 или с `Main`, TFM `net8.0`, `Nullable enable`.
 
 **Вариант A — одно устройство, без конфигурации** (`Mvk01Connection` сам создаёт
-пул, включает чётность адресов и разрешает запись конфигурации):
+пул и включает чётность адресов; запись конфигурации по умолчанию запрещена):
 
 ```csharp
 using System;
@@ -55,8 +55,10 @@ IMvk01Device device = mvk.Device;              // типизированный �
 IMvkDevice raw = mvk.Device.Device;            // сырые регистры и настройки
 ```
 
-**Вариант B — пул или DI, несколько устройств** (`AddMvk01Devices()` включает те же
-настройки МВК01: `RequireEvenAddressAndQuantity` и `AllowConfigurationWrite`):
+**Вариант B — пул или DI, несколько устройств** (`AddMvk01Devices()` включает
+обязательную для МВК01 настройку `RequireEvenAddressAndQuantity`; запись
+конфигурации по умолчанию запрещена и включается явно через
+`Defaults.AllowConfigurationWrite = true`):
 
 ```csharp
 using Microsoft.Extensions.Configuration;
@@ -157,7 +159,60 @@ internal static class Program
 }
 ```
 
-**Готовый пример.** Этот рецепт собран в отдельном проекте `samples/Mvk.Sample.Polling`:
+**Вариант с `Mvk01Watcher`.** Цикл, интервал и обработку ошибок можно не писать вручную:
+
+```csharp
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using Mvk.MVK01;
+using Mvk.MVK01.Polling;
+
+internal static class Program
+{
+    private static async Task Main()
+    {
+        await using Mvk01Connection mvk = await Mvk01Connection.ConnectAsync("10.20.0.211");
+
+        using CancellationTokenSource cts = new();
+        Console.CancelKeyPress += (_, eventArgs) =>
+        {
+            eventArgs.Cancel = true;
+            cts.Cancel();
+        };
+
+        Mvk01Watcher watcher = new(mvk.Device, TimeSpan.FromMilliseconds(500));
+        Mvk01PollItem item = new(
+            Mvk01MeasurementNumber.Rms10To1000Acceleration,
+            channel: 1);
+
+        try
+        {
+            await foreach (Mvk01Sample sample in watcher.WatchAsync(item, cts.Token))
+            {
+                if (sample.Error is { } error)
+                {
+                    Console.WriteLine($"{sample.Timestamp.ToLocalTime():HH:mm:ss.fff}  ошибка: {error.ErrorKind} — {error.Message}");
+                    continue;
+                }
+
+                Console.WriteLine($"{sample.Timestamp.ToLocalTime():HH:mm:ss.fff}  канал 1: {sample.ChannelValue:F4} м/с2");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            Console.WriteLine("Опрос остановлен.");
+        }
+    }
+}
+```
+
+`Mvk01Watcher` выполняет первый запрос сразу, затем выдерживает интервал от
+начала цикла и не накладывает запросы. Ошибки приходят в `sample.Error`,
+поэтому `try/catch` вокруг каждого опроса не нужен.
+
+**Готовый пример.** Этот рецепт собран в отдельном проекте `samples/Mvk.Sample.Polling`
+(использует `Mvk01Watcher`):
 
 ```powershell
 dotnet run --project samples\Mvk.Sample.Polling                    # до Ctrl+C
@@ -717,10 +772,11 @@ internal static class Program
 
 **Пояснение.** Команда кодируется `Mvk01Codec.EncodeSystemCommand` (BigEndian:
 `0x000F, 0x0001`) и записывается по 0x0002 функцией 0x10. Успех — `0x00000`,
-неверная команда — `0x00BAD`, ошибка Flash — `0xF0BAD`. Через `Mvk01Connection`
-и после `AddMvk01Devices()` запись разрешена (`AllowConfigurationWrite = true`),
-иначе middleware `writeProtection` отклонит запрос ещё до устройства. Если
-3 секунд не хватает, увеличьте таймаут явно:
+неверная команда — `0x00BAD`, ошибка Flash — `0xF0BAD`. Запись должна быть
+разрешена явно (`AllowConfigurationWrite = true` или
+`ConnectAsync(..., allowConfigurationWrite: true)`), иначе middleware
+`writeProtection` отклонит запрос ещё до устройства. Если 3 секунд не хватает,
+увеличьте таймаут явно:
 
 ```csharp
 Mvk01CommandResult slow = await mvk.ExecuteSystemCommandAsync(

@@ -761,13 +761,13 @@ await using SilentTcpServer silent = SilentTcpServer.Start();
 | Текст | Причина | Решение |
 |---|---|---|
 | `Устройство 'mvk-1' доступно только для чтения (WritePolicy=ReadOnly).` | `WritePolicy = ReadOnly` | Сменить политику (`AllowAll`/`ProtectConfigArea`) или отказаться от записи |
-| `Запись в защищённую область конфигурации (0x0000–0x0FFF) устройства 'mvk-1' запрещена. Разрешите AllowConfigurationWrite.` | `WritePolicy = ProtectConfigArea` и `AllowConfigurationWrite = false`, запрос задел защищённую область | Разрешить запись: `AllowConfigurationWrite = true` (в DI это делает `AddMvk01Devices`) или писать вне защищённой области |
+| `Запись в защищённую область конфигурации (0x0000–0x0FFF) устройства 'mvk-1' запрещена. Разрешите AllowConfigurationWrite.` | `WritePolicy = ProtectConfigArea` и `AllowConfigurationWrite = false`, запрос задел защищённую область | Разрешить запись явно: `Defaults.AllowConfigurationWrite = true` или `ConnectAsync(..., allowConfigurationWrite: true)`, либо писать вне защищённой области |
 | `Для операции WriteMultipleRegisters отсутствуют данные записи.` | В `ModbusRequest` не переданы данные | Исправить запрос (обычный конструктор `ModbusRequest` такое не пропустит — защитная проверка middleware) |
 
 Для МВК01 системные команды (`SaveConfiguration`, `Reboot`) пишут в регистр `0x0002`,
-который лежит в защищённой области: при ручной конфигурации без `AddMvk01Devices()`
-запись будет отклонена, и команда вернёт `Mvk01CommandStatus.TransportError` с этой
-ошибкой в `Error`.
+который лежит в защищённой области: если запись не разрешена явно, она будет
+отклонена, и команда вернёт `Mvk01CommandStatus.TransportError` с этой ошибкой
+в `Error`.
 
 ### 6.4. «После перезагрузки устройства всё восстановилось само»
 
@@ -1092,7 +1092,7 @@ public sealed class MvkDeviceViewModel : INotifyPropertyChanged
 | `Устройство 'mvk-1' вернуло ошибку Modbus 0x03 (функция 0x90).` | `NModbusTransport.MapException` | `IllegalDataValue`: неверное количество/структура запроса при записи | Проверить `Quantity` и `WriteData` |
 | `Адрес 0x2001 и число регистров 1 должны быть чётными (особенность устройства 'mvk-1').` | `ValidationMiddleware` | Локальная проверка чётности при `RequireEvenAddressAndQuantity = true` | Сделать адрес и количество чётными |
 | `Устройство 'mvk-1' доступно только для чтения (WritePolicy=ReadOnly).` | `WriteProtectionMiddleware` | `WritePolicy = ReadOnly` | Сменить политику, если запись действительно нужна |
-| `Запись в защищённую область конфигурации (0x0000–0x0FFF) устройства 'mvk-1' запрещена. Разрешите AllowConfigurationWrite.` | `WriteProtectionMiddleware` | Запись в защищённую область при `ProtectConfigArea` и `AllowConfigurationWrite = false` | Включить `AllowConfigurationWrite` (в DI — `AddMvk01Devices`) или писать вне области |
+| `Запись в защищённую область конфигурации (0x0000–0x0FFF) устройства 'mvk-1' запрещена. Разрешите AllowConfigurationWrite.` | `WriteProtectionMiddleware` | Запись в защищённую область при `ProtectConfigArea` и `AllowConfigurationWrite = false` | Включить `AllowConfigurationWrite` явно (`Defaults` или `ConnectAsync`) или писать вне области |
 | `Таймаут операции WriteMultipleRegisters (0x0002) — превышено 3000 мс.` | `TimeoutMiddleware` | Операция не уложилась в бюджет `Items[MvkContextItems.TimeoutMs]` | Увеличить таймаут `ExecuteAsync(request, timeout, ct)`; для `SaveConfiguration` минимум 3 с |
 | `Устройство 'mvk-1' не найдено в конфигурации пула.` | `MvkDevicePool.GetDevice` | Идентификатора нет в `Devices` | Использовать `TryGetDevice`, `AddDevice` или правильный `Id` |
 | `Устройство 'mvk-1' отключено в конфигурации (Enabled = false).` | `MvkDevice.ExecuteCoreAsync` / `EnsureConnectedAsync` | Устройство выключено в конфигурации | Включить (`Enabled = true`) или не опрашивать |

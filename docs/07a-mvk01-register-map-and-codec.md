@@ -863,9 +863,10 @@ switch (status)
 }
 ```
 
-Запись в область `0x0000–0x0FFF` защищена политикой `ProtectConfigArea`; на устройстве
-с `AllowConfigurationWrite = false` запрос будет отклонён middleware `writeProtection`.
-В `Mvk01Connection`/DI после `AddMvk01Devices()` запись конфигурации разрешена.
+Запись в область `0x0000–0x0FFF` защищена политикой `ProtectConfigArea`; при
+`AllowConfigurationWrite = false` запрос будет отклонён middleware `writeProtection`.
+В `Mvk01Connection` запись разрешается параметром `allowConfigurationWrite: true`,
+в DI — явной настройкой `Defaults.AllowConfigurationWrite = true`.
 На реальном стенде Save/Reboot выполнять только с явного разрешения.
 
 ### 9.4 Декодировать набор СКЗ из регистров вручную

@@ -20,7 +20,7 @@
 Метаданные заданы в корневом `Directory.Build.props` — они применяются ко всем проектам:
 
 ```xml
-<VersionPrefix Condition="'$(VersionPrefix)' == ''">0.1.0</VersionPrefix>
+<VersionPrefix Condition="'$(VersionPrefix)' == ''">0.2.0</VersionPrefix>
 <Authors>БеляевИА</Authors>
 <Product>ConnectMVKBulder</Product>
 <PackageTags>modbus;modbus-tcp;mvk;mvk01;виброконтроль</PackageTags>
@@ -57,17 +57,17 @@ dotnet pack ConnectMVKBulder.sln -c Release -o nupkgs
 Результат в папке `nupkgs/`:
 
 ```
-Mvk.Modbus.0.1.0.nupkg      Mvk.Modbus.0.1.0.snupkg
-Mvk.MVK01.0.1.0.nupkg       Mvk.MVK01.0.1.0.snupkg
+Mvk.Modbus.0.2.0.nupkg      Mvk.Modbus.0.2.0.snupkg
+Mvk.MVK01.0.2.0.nupkg       Mvk.MVK01.0.2.0.snupkg
 ```
 
-Состав пакета `Mvk.MVK01.0.1.0.nupkg` (проверено):
+Состав пакета `Mvk.MVK01.0.2.0.nupkg` (проверено):
 
 ```
 lib/net8.0/Mvk.MVK01.dll
 lib/net8.0/Mvk.MVK01.xml        — XML-документация
 README.md                        — отображается на странице пакета
-Mvk.MVK01.nuspec                 — зависимости: Mvk.Modbus 0.1.0, System.Text.Encoding.CodePages
+Mvk.MVK01.nuspec                 — зависимости: Mvk.Modbus 0.2.0, System.Text.Encoding.CodePages
 ```
 
 Задать версию для конкретной сборки можно без правки файлов:
@@ -84,7 +84,7 @@ dotnet pack ConnectMVKBulder.sln -c Release -o nupkgs -p:Version=0.2.0
 
 ```powershell
 dotnet add C:\Projects\MyApp\MyApp.csproj package Mvk.MVK01 `
-    --version 0.1.0 --source C:\Libraries\ConnectMVKBulder\nupkgs
+    --version 0.2.0 --source C:\Libraries\ConnectMVKBulder\nupkgs
 ```
 
 `Mvk.Modbus` установится автоматически как зависимость. Если нужен только транспорт
@@ -94,7 +94,7 @@ dotnet add C:\Projects\MyApp\MyApp.csproj package Mvk.MVK01 `
 
 ```powershell
 dotnet nuget add source C:\Libraries\ConnectMVKBulder\nupkgs -n mvk-local
-dotnet add C:\Projects\MyApp\MyApp.csproj package Mvk.MVK01 --version 0.1.0
+dotnet add C:\Projects\MyApp\MyApp.csproj package Mvk.MVK01 --version 0.2.0
 ```
 
 Проверить и удалить источник:
@@ -159,8 +159,8 @@ dotnet add C:\Projects\MyApp\MyApp.csproj package Mvk.MVK01 --version 0.2.0
 
 ```powershell
 # nuget.org
-dotnet nuget push nupkgs\Mvk.Modbus.0.1.0.nupkg --api-key <API_KEY> --source https://api.nuget.org/v3/index.json
-dotnet nuget push nupkgs\Mvk.MVK01.0.1.0.nupkg  --api-key <API_KEY> --source https://api.nuget.org/v3/index.json
+dotnet nuget push nupkgs\Mvk.Modbus.0.2.0.nupkg --api-key <API_KEY> --source https://api.nuget.org/v3/index.json
+dotnet nuget push nupkgs\Mvk.MVK01.0.2.0.nupkg  --api-key <API_KEY> --source https://api.nuget.org/v3/index.json
 
 # внутренний сервер (пример)
 dotnet nuget push nupkgs\*.nupkg --source https://nuget.company.local/v3/index.json --api-key <TOKEN>
@@ -176,20 +176,26 @@ dotnet nuget push nupkgs\*.nupkg --source https://nuget.company.local/v3/index.j
 
 и положить файл `LICENSE` (для MIT) в корень репозитория.
 
-Символы (`.snupkg`) публикуются тем же способом — `dotnet nuget push nupkgs\Mvk.Modbus.0.1.0.snupkg`.
+Символы (`.snupkg`) публикуются тем же способом — `dotnet nuget push nupkgs\Mvk.Modbus.0.2.0.snupkg`.
 
 ## 14.8. Сборка в CI
+
+В репозитории настроен GitHub Actions: `.github/workflows/ci.yml`.
+Workflow запускается на `push` в `main`/`dev`, на pull request и вручную,
+выполняет restore, сборку, тесты с покрытием и упаковку на Ubuntu и Windows.
+Артефакты: `coverage-<os>` и `nupkgs-<os>`.
 
 Минимальный шаг для любой CI-системы (GitHub Actions, GitLab CI, Azure Pipelines):
 
 ```powershell
 dotnet restore ConnectMVKBulder.sln
 dotnet build   ConnectMVKBulder.sln -c Release --no-restore
-dotnet test    ConnectMVKBulder.sln -c Release --no-build
+dotnet test    ConnectMVKBulder.sln -c Release --no-build --collect:"XPlat Code Coverage" --results-directory TestResults
 dotnet pack    ConnectMVKBulder.sln -c Release --no-build -o nupkgs -p:Version=1.2.3
 ```
 
 Папку `nupkgs` сохраните как артефакт сборки и передайте в шаг публикации.
+Покрытие лежит в `TestResults/**/coverage.cobertura.xml`.
 
 ## 14.9. Проектная ссылка вместо пакета
 

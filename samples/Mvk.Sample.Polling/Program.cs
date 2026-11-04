@@ -1,5 +1,5 @@
-using Mvk.Modbus;
 using Mvk.MVK01;
+using Mvk.MVK01.Polling;
 
 namespace Mvk.Sample.Polling;
 
@@ -46,26 +46,23 @@ internal static class Program
             cts.Cancel();
         };
 
-        using PeriodicTimer timer = new(PollInterval);
+        // Наблюдатель сам читает параметр по номеру и возвращает значения всех 8 каналов.
+        Mvk01Watcher watcher = new(mvk.Device, PollInterval);
+        Mvk01PollItem item = new(Mvk01MeasurementNumber.Rms10To1000Acceleration, channel);
 
         try
         {
-            while (await timer.WaitForNextTickAsync(cts.Token))
+            await foreach (Mvk01Sample sample in watcher.WatchAsync(item, cts.Token))
             {
-                try
+                if (sample.Error is { } error)
                 {
-                    // Один запрос — значения по всем 8 каналам (0x4000 + (N−1)×16, N=55).
-                    float[] values = await mvk.Device.ReadMeasurementByNumberAsync(
-                        Mvk01MeasurementNumber.Rms10To1000Acceleration,
-                        cts.Token);
+                    // Ошибка связи не завершает наблюдение: реконнект выполняется автоматически.
+                    Console.WriteLine($"{sample.Timestamp.ToLocalTime():HH:mm:ss.fff}  ошибка: {error.ErrorKind} — {error.Message}");
+                    continue;
+                }
 
-                    Console.WriteLine($"{DateTime.Now:HH:mm:ss.fff}  канал {channel}: {values[channel - 1]:F4} м/с2");
-                }
-                catch (MvkModbusException ex)
-                {
-                    // Ошибка связи: реконнект выполняется автоматически, цикл продолжаем.
-                    Console.WriteLine($"{DateTime.Now:HH:mm:ss.fff}  ошибка: {ex.ErrorKind} — {ex.Message}");
-                }
+                float value = sample.ChannelValue ?? float.NaN;
+                Console.WriteLine($"{sample.Timestamp.ToLocalTime():HH:mm:ss.fff}  канал {channel}: {value:F4} м/с2");
             }
         }
         catch (OperationCanceledException)

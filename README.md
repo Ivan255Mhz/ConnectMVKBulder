@@ -1,5 +1,7 @@
 # ConnectMVKBulder
 
+[![CI](https://github.com/Ivan255Mhz/ConnectMVKBulder/actions/workflows/ci.yml/badge.svg)](https://github.com/Ivan255Mhz/ConnectMVKBulder/actions/workflows/ci.yml)
+
 Библиотека-обёртка для устройства **МВК01** (многоканальный виброконтроллер, Modbus/TCP)
 на C#/.NET 8. Берёт на себя транспорт, пул устройств, конфигурацию, проверки и декодирование
 регистров, оставляя прикладному коду простые типизированные вызовы.
@@ -15,9 +17,11 @@
 - **Пайплайн middleware**: валидация, retry, логирование, метрики, свои обработчики.
 - **Типизированный слой МВК01**: снимки каналов и тахометров, измерения по номерам,
   спектральные полосы, системные команды, заводские настройки.
+- **Наблюдение**: `Mvk01Watcher` с `IAsyncEnumerable<Mvk01Sample>` — периодический
+  опрос без ручных циклов, ошибки приходят в поток и не прерывают наблюдение.
 - **Конфигурация**: секция `MvkModbus` (JSON, переменные окружения, DI) с валидацией и наследованием.
 - **Тестирование без железа**: эмулятор Modbus-slave, молчащий сервер, программируемый транспорт.
-- **178 тестов**: транспорт, пайплайн, пул, карта регистров, кодеки, фасад.
+- **202 теста**: транспорт, пайплайн, пул, карта регистров, кодеки, фасад, наблюдение, безопасность записи.
 
 ## Состав решения
 
@@ -29,7 +33,7 @@
 | `tests/Mvk.Modbus.Tests` | Тесты транспорта, пайплайна, пула и конфигурации |
 | `tests/Mvk.MVK01.Tests` | Тесты карты регистров, кодеков и фасада |
 | `samples/Mvk.Sample.Console` | Пример: DI, свой middleware, обзор устройства и режим `watch` |
-| `samples/Mvk.Sample.Polling` | Минимальный пример: опрос СКЗ 10…1000 Гц каждые 0,5 с |
+| `samples/Mvk.Sample.Polling` | Минимальный пример: опрос СКЗ 10…1000 Гц через `Mvk01Watcher` каждые 0,5 с |
 
 Зависимости: [NModbus 3.0.81](https://www.nuget.org/packages/NModbus) (изолирован внутри `Mvk.Modbus`),
 `Microsoft.Extensions.*`, `System.Text.Encoding.CodePages` (кодовая страница 1251 в `Mvk.MVK01`).
@@ -86,6 +90,9 @@ Console.WriteLine($"Напряжение: {channel.SensorVoltage:F4} В, СКЗ 
 `ConnectAsync` сразу проверяет связь: если устройство недоступно — выбрасывается
 `MvkModbusException` с категорией `Timeout`/`Transport`.
 
+> По умолчанию `Mvk01Connection` работает **только на чтение**. Для `Save`, `Reboot`
+> и `Restore` используйте `ConnectAsync(..., allowConfigurationWrite: true)`.
+
 ### 2. Несколько устройств из JSON
 
 ```json
@@ -126,8 +133,34 @@ Mvk01Channel channel = await factory.Devices.First().ReadChannelAsync(1);
 ```
 
 > Порядок вызовов: сначала `AddMvkModbus`, затем `AddMvk01Devices`.
-> `AddMvk01Devices` включает обязательные для МВК01 настройки (чётные адрес/количество
-> регистров и разрешение записи конфигурации).
+> `AddMvk01Devices` включает обязательную для МВК01 настройку чётности адреса и
+> количества регистров. Запись конфигурации по умолчанию запрещена: включите
+> `Defaults.AllowConfigurationWrite = true` явно.
+
+### 4. Периодический опрос через `Mvk01Watcher`
+
+```csharp
+using Mvk.MVK01.Polling;
+
+IMvk01Device device = factory.Devices.First();
+Mvk01Watcher watcher = new(device, TimeSpan.FromMilliseconds(500));
+
+await foreach (Mvk01Sample sample in watcher.WatchAsync(
+    new Mvk01PollItem(Mvk01MeasurementNumber.Rms10To1000Acceleration, channel: 1),
+    cancellationToken))
+{
+    if (sample.Error is { } error)
+    {
+        Console.WriteLine($"ошибка: {error.ErrorKind} — {error.Message}");
+        continue;
+    }
+
+    Console.WriteLine($"СКЗ 10…1000 Гц: {sample.ChannelValue:F4} м/с2");
+}
+```
+
+Первый опрос выполняется сразу; ошибки приходят в `sample.Error` и не прерывают
+наблюдение; отмена — через `cancellationToken`.
 
 ## Документация
 

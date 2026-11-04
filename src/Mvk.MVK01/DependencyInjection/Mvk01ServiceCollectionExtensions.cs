@@ -14,9 +14,11 @@ namespace Mvk.MVK01.DependencyInjection
     public static class Mvk01ServiceCollectionExtensions
     {
         /// <summary>
-        /// Регистрирует фабрику типизированных устройств МВК01 и включает обязательные
-        /// для этого устройства настройки: чётные адрес/количество регистров и разрешение
-        /// записи конфигурации (команды Save/Reboot).
+        /// Регистрирует фабрику типизированных устройств МВК01 и включает обязательную
+        /// для этого устройства настройку чётности адреса и количества регистров.
+        /// Запись конфигурации по умолчанию запрещена; чтобы разрешить её, задайте
+        /// <see cref="MvkDefaultsOptions.AllowConfigurationWrite"/> явно в конфигурации
+        /// или в <c>AddMvkModbus</c>.
         /// Вызывать после <see cref="MvkModbusServiceCollectionExtensions.AddMvkModbus(IServiceCollection, Action{MvkModbusOptions})"/>.
         /// </summary>
         /// <param name="services">Коллекция служб.</param>
@@ -27,7 +29,6 @@ namespace Mvk.MVK01.DependencyInjection
             services.AddOptions<MvkModbusOptions>().PostConfigure(options =>
             {
                 options.Defaults.RequireEvenAddressAndQuantity = true;
-                options.Defaults.AllowConfigurationWrite = true;
             });
 
             services.TryAddSingleton<IMvk01DeviceFactory>(provider =>

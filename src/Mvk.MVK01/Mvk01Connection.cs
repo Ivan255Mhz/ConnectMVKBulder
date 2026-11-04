@@ -9,6 +9,8 @@ namespace Mvk.MVK01
 {
     /// <summary>
     /// Простейшая точка входа для одного устройства: подключение по адресу без конфигурации.
+    /// По умолчанию доступно только чтение; запись в конфигурацию включается параметром
+    /// <c>allowConfigurationWrite</c>.
     /// <code>
     /// await using Mvk01Connection mvk = await Mvk01Connection.ConnectAsync("10.20.0.211");
     /// Mvk01Channel channel = await mvk.ReadChannelAsync(1);
@@ -37,12 +39,17 @@ namespace Mvk.MVK01
         /// <param name="port">TCP-порт Modbus; по умолчанию 502.</param>
         /// <param name="slaveId">Идентификатор устройства Modbus; по умолчанию 1.</param>
         /// <param name="cancellationToken">Токен отмены.</param>
+        /// <param name="allowConfigurationWrite">
+        /// Разрешить запись в защищённую область конфигурации и системные команды
+        /// Save/Restore/Reboot. По умолчанию запрещено.
+        /// </param>
         /// <exception cref="MvkModbusException">Устройство недоступно или отключено.</exception>
         public static async Task<Mvk01Connection> ConnectAsync(
             string host,
             int port = 502,
             byte slaveId = 1,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            bool allowConfigurationWrite = false)
         {
             if (string.IsNullOrWhiteSpace(host))
             {
@@ -56,7 +63,7 @@ namespace Mvk.MVK01
                     Port = port,
                     SlaveId = slaveId,
                     RequireEvenAddressAndQuantity = true,
-                    AllowConfigurationWrite = true
+                    AllowConfigurationWrite = allowConfigurationWrite
                 },
                 Pool = new MvkPoolOptions { ReconnectEnabled = true },
                 Devices =
