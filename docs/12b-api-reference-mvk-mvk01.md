@@ -1285,6 +1285,7 @@ public sealed record Mvk01PollItem
 public sealed record Mvk01Sample
 {
     public required DateTimeOffset Timestamp { get; init; }
+    public string? DeviceId { get; init; }
     public required Mvk01PollItem Item { get; init; }
     public required float[] Values { get; init; }
     public MvkModbusException? Error { get; init; }
@@ -1297,6 +1298,7 @@ public sealed record Mvk01Sample
 | Сигнатура | Описание |
 |---|---|
 | `DateTimeOffset Timestamp` | Время получения результата (UTC) |
+| `string? DeviceId` | Идентификатор устройства; заполняется `Mvk01Watcher` |
 | `Mvk01PollItem Item` | Наблюдаемый параметр |
 | `float[] Values` | Значения по всем 8 каналам; при ошибке — пустой массив |
 | `MvkModbusException? Error` | Ошибка обращения либо `null` при успехе |
@@ -1365,8 +1367,172 @@ await foreach (Mvk01Sample sample in watcher.WatchAsync(
 
 ---
 
+## 10. Mvk.MVK01.Setpoints
+
+Прикладные уставки и тревоги. Типы объявлены в `src/Mvk.MVK01/Setpoints`.
+Уставки не записываются в МВК01 и не требуют `AllowConfigurationWrite`.
+
+### 10.1 `MvkSetpoint` (`sealed record`)
+
+```csharp
+public sealed record MvkSetpoint
+{
+    public required string Id { get; init; }
+    public required string DeviceId { get; init; }
+    public required Mvk01MeasurementNumber Measurement { get; init; }
+    public required int Channel { get; init; }
+    public required MvkSetpointComparison Comparison { get; init; }
+    public required double Threshold { get; init; }
+    public double? UpperThreshold { get; init; }
+    public double Hysteresis { get; init; }
+    public TimeSpan ActivationDelay { get; init; }
+    public MvkAlarmSeverity Severity { get; init; }
+    public bool Enabled { get; init; }
+    public string? Name { get; init; }
+    public string? Message { get; init; }
+    public IReadOnlyDictionary<string, string>? Tags { get; init; }
+}
+```
+
+`MvkSetpointComparison`: `Above`, `Below`, `Outside`, `Inside`.
+`MvkAlarmSeverity`: `Info`, `Warning`, `Alarm`, `Trip`.
+`MvkSetpointState`: `Normal`, `Pending`, `Active`, `Unknown`.
+
+### 10.2 `MvkSetpointEngine`
+
+```csharp
+public sealed class MvkSetpointEngine
+{
+    public MvkSetpointEngine(IEnumerable<MvkSetpoint> setpoints);
+
+    public IReadOnlyList<MvkSetpoint> Setpoints { get; }
+    public IReadOnlyList<MvkSetpointStatus> Statuses { get; }
+
+    public MvkSetpointStatus? GetStatus(string id);
+    public IReadOnlyList<Mvk01PollItem> CreatePollItems(string deviceId);
+    public IReadOnlyList<MvkAlarmEvent> Evaluate(Mvk01Sample sample, DateTimeOffset now);
+}
+```
+
+Движок не зависит от транспорта. `Evaluate` требует заполненный
+`Mvk01Sample.DeviceId` и возвращает события только при переходах.
+`CreatePollItems` создаёт один элемент опроса на параметр (значения всех
+8 каналов приходят одним запросом).
+
+### 10.3 `MvkSetpointSet` и fluent-построитель
+
+```csharp
+MvkSetpointSet set = MvkSetpointSet.Create()
+    .Add("mvk-1", Mvk01MeasurementNumber.Rms10To1000Acceleration, channel: 1)
+        .Warning(4.5, hysteresis: 0.2)
+        .Alarm(7.1, hysteresis: 0.3)
+        .Trip(11.0, hysteresis: 0.5);
+```
+
+`MvkSetpointBuilder` также содержит `Info`, `Above`, `Below`, `Outside`,
+`Inside` и позволяет задать `activationDelay`, `name`, `id`.
+`MvkSetpointSet` реализует `IReadOnlyCollection<MvkSetpoint>`, умеет
+`Validate()`, `ValidateAndThrow()` и неявно преобразуется из builder'а.
+
+### 10.4 Хранилища
+
+```csharp
+public interface IMvkSetpointStore
+{
+    ValueTask<IReadOnlyList<MvkSetpoint>> LoadAsync(CancellationToken ct = default);
+    ValueTask SaveAsync(IReadOnlyCollection<MvkSetpoint> setpoints, CancellationToken ct = default);
+}
+```
+
+| Тип | Описание |
+|---|---|
+| `JsonMvkSetpointStore` | JSON-файл; поддерживает объект с `setpoints` и массив |
+| `InMemoryMvkSetpointStore` | Хранилище в памяти для тестов и программной настройки |
+
+Сохранение JSON атомарное: временный файл + `File.Move(overwrite: true)`.
+
+### 10.5 `Mvk01AlarmService`
+
+```csharp
+public sealed class Mvk01AlarmService : IMvk01AlarmService
+{
+    public Mvk01AlarmService(
+        IMvk01DeviceFactory factory,
+        IMvkSetpointStore store,
+        Mvk01AlarmOptions? options = null,
+        ILogger<Mvk01AlarmService>? logger = null);
+
+    public static Task<Mvk01AlarmService> StartAsync(
+        string devicesConfigPath,
+        string setpointsPath,
+        Mvk01AlarmOptions? options = null,
+        CancellationToken cancellationToken = default);
+
+    public static Task<Mvk01AlarmService> StartAsync(
+        string devicesConfigPath,
+        MvkSetpointSet setpoints,
+        Mvk01AlarmOptions? options = null,
+        CancellationToken cancellationToken = default);
+
+    public static Task<Mvk01AlarmService> StartAsync(
+        string devicesConfigPath,
+        IMvkSetpointStore store,
+        Mvk01AlarmOptions? options = null,
+        CancellationToken cancellationToken = default);
+
+    public IReadOnlyList<MvkSetpointStatus> Statuses { get; }
+    public IAsyncEnumerable<MvkAlarmEvent> WatchAsync(CancellationToken ct = default);
+    public Task RunAsync(
+        Func<MvkAlarmEvent, CancellationToken, ValueTask> onAlarm,
+        CancellationToken ct = default);
+    public Task ReloadSetpointsAsync(CancellationToken ct = default);
+}
+```
+
+`StartAsync` создаёт и освобождает собственный пул. `RunAsync` изолирует
+ошибки callback и продолжает наблюдение. `ReloadSetpointsAsync` разрешён
+только при остановленном наблюдении. `Statuses` — снимок для UI.
+
+### 10.6 `Mvk01AlarmOptions` и DI
+
+```csharp
+public sealed class Mvk01AlarmOptions
+{
+    public TimeSpan PollInterval { get; set; } = TimeSpan.FromMilliseconds(500);
+    public string SetpointsFile { get; set; } = "mvk-setpoints.json";
+    public Action<Exception, MvkAlarmEvent>? OnReactionError { get; set; }
+}
+```
+
+```csharp
+builder.Services.AddMvkModbus(builder.Configuration);
+builder.Services.AddMvk01Devices();
+builder.Services.AddMvk01Alarms(options =>
+{
+    options.SetpointsFile = "mvk-setpoints.json";
+});
+```
+
+`AddMvk01Alarms` регистрирует `IMvkSetpointStore` (JSON по умолчанию) и
+`IMvk01AlarmService`. Пользовательский store, зарегистрированный раньше,
+не перезаписывается.
+
+### 10.7 События и состояния
+
+`MvkSetpointStatus` содержит уставку, `State`, `LastValue`, `Timestamp`,
+`ActiveSince` и `Error`.
+
+`MvkAlarmEvent` содержит `Timestamp`, `DeviceId`, `Setpoint`, `State`,
+`PreviousState`, `Value`, `Error`, `Message`; свойства `IsActive`/`IsClear`.
+
+События приходят только при переходах. `Unknown` означает ошибку связи или
+нечисловое значение; автоматически в `Active` не превращается.
+
+---
+
 ## См. также
 
 - [Справочник Mvk.Modbus](12a-api-reference-mvk-modbus.md) — конфигурация, пул, транспорт, пайплайн, `RegisterCodec`.
 - [Карта регистров](07a-mvk01-register-map-and-codec.md) — разбор адресного пространства, кодеков и особенностей МВК01.
+- [Уставки и тревоги](15-setpoints.md) — прикладные пороги, гистерезис и реакции.
 - [README](../README.md) — обзор библиотеки, быстрый старт и настройка.

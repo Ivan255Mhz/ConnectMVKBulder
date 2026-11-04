@@ -932,7 +932,7 @@ public sealed class DeviceTimeoutTests
 | `Transport/NModbusTransportTests.cs` | транспорт против `MvkTestServer` и `SilentTcpServer`, переподключение, `MapException` |
 | `TestDeviceSettings.cs`, `FakeTransport.cs` | внутренние помощники тест-проекта: быстрые настройки и транспорт с задержкой/счётчиками |
 
-`tests/Mvk.MVK01.Tests` — 79 тестов (45 `[Fact]` + 13 `[Theory]` c 34
+`tests/Mvk.MVK01.Tests` — 113 тестов (79 `[Fact]` + 13 `[Theory]` c 34
 вариантами `[InlineData]`):
 
 | Файл | Что покрыто |
@@ -942,7 +942,12 @@ public sealed class DeviceTimeoutTests
 | `Mvk01DeviceTests.cs` | снимки канала/тахометра/конфигурации, параметры по номерам, команды |
 | `Mvk01ConnectionTests.cs` | режим «только чтение» по умолчанию, opt-in запись, защищённая область, Save без разрешения |
 | `Polling/Mvk01WatcherTests.cs` | периодический опрос, интервал, ошибки, отмена, валидация |
+| `Setpoints/MvkSetpointEngineTests.cs` | гистерезис Above/Below/Outside/Inside, задержка, `Unknown`, несколько уровней |
+| `Setpoints/MvkSetpointSetTests.cs` | fluent-набор, auto-id, валидация |
+| `Setpoints/MvkSetpointStoreTests.cs` | JSON round-trip, массив/объект, ошибки, in-memory |
+| `Setpoints/Mvk01AlarmServiceTests.cs` | высокоуровневый сервис, реакции, reload, JSON-конфигурация |
 | `DependencyInjection/Mvk01ServiceCollectionExtensionsTests.cs` | `AddMvk01Devices`, фабрика, чётность; запись по умолчанию запрещена |
+| `DependencyInjection/Mvk01AlarmServiceCollectionExtensionsTests.cs` | `AddMvk01Alarms`, JSON-хранилище, пользовательский store |
 
 Пакеты тестов одинаковые в обоих проектах: `xunit` 2.5.3,
 `Microsoft.NET.Test.Sdk` 17.8.0, `xunit.runner.visualstudio` 2.5.3,

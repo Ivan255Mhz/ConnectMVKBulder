@@ -10,7 +10,7 @@
 
   <!-- Метаданные пакетов NuGet (dotnet pack) -->
   <PropertyGroup>
-    <VersionPrefix Condition="'$(VersionPrefix)' == ''">0.2.0</VersionPrefix>
+    <VersionPrefix Condition="'$(VersionPrefix)' == ''">0.3.0</VersionPrefix>
     <Authors Condition="'$(Authors)' == ''">БеляевИА</Authors>
     <Product>ConnectMVKBulder</Product>
     <PackageTags>modbus;modbus-tcp;mvk;mvk01;виброконтроль</PackageTags>

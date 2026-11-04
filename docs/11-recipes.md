@@ -35,8 +35,10 @@
 19. [Живой веб-монитор (SSE)](#18-живой-веб-монитор-aspnet-core-sse)
 20. [Health-check пула](#19-health-check-пула-устройств)
 21. [Резервная копия конфигурации](#20-резервная-копия-конфигурации-каналов)
-22. [Подводные камни](#подводные-камни)
-23. [См. также](#см-также)
+22. [Уставки в JSON и Mvk01AlarmService](#21-уставки-в-json-и-mvk01alarmservice)
+23. [Реакции на тревоги: callback и webhook](#22-реакции-на-тревоги-callback-и-webhook)
+24. [Подводные камни](#подводные-камни)
+25. [См. также](#см-также)
 
 ---
 
@@ -2622,6 +2624,194 @@ internal static class Program
 
 ---
 
+## 21. Уставки в JSON и Mvk01AlarmService
+
+**Задача.** Хранить прикладные пороги отдельно от устройства, получать события
+«выше предупреждения» и «выше аварии» без ручного цикла опроса.
+
+**Решение.** `Mvk01AlarmService.StartAsync` + JSON-файл уставок.
+
+```csharp
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using Mvk.MVK01.Setpoints;
+
+internal static class Program
+{
+    private static async Task Main()
+    {
+        await using Mvk01AlarmService alarms = await Mvk01AlarmService.StartAsync(
+            "mvkmodbus.json",
+            "mvk-setpoints.json");
+
+        using CancellationTokenSource cts = new();
+        Console.CancelKeyPress += (_, eventArgs) =>
+        {
+            eventArgs.Cancel = true;
+            cts.Cancel();
+        };
+
+        try
+        {
+            await alarms.RunAsync((alarm, _) =>
+            {
+                Console.WriteLine(
+                    $"{alarm.Timestamp.ToLocalTime():HH:mm:ss.fff}  "
+                    + $"{alarm.DeviceId}  {alarm.Setpoint.Name}: "
+                    + $"{alarm.PreviousState} -> {alarm.State} = {alarm.Value:F3}");
+
+                return ValueTask.CompletedTask;
+            }, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            Console.WriteLine("Наблюдение остановлено.");
+        }
+    }
+}
+```
+
+`mvk-setpoints.json`:
+
+```json
+{
+  "setpoints": [
+    {
+      "id": "mvk-1/ch1/rms10-1000/warning",
+      "deviceId": "mvk-1",
+      "measurement": "Rms10To1000Acceleration",
+      "channel": 1,
+      "comparison": "Above",
+      "threshold": 4.5,
+      "hysteresis": 0.2,
+      "activationDelay": "00:00:01",
+      "severity": "Warning",
+      "name": "Канал 1: предупреждение"
+    },
+    {
+      "id": "mvk-1/ch1/rms10-1000/alarm",
+      "deviceId": "mvk-1",
+      "measurement": "Rms10To1000Acceleration",
+      "channel": 1,
+      "comparison": "Above",
+      "threshold": 7.1,
+      "hysteresis": 0.3,
+      "severity": "Alarm",
+      "name": "Канал 1: авария"
+    }
+  ]
+}
+```
+
+**Пояснение.** `StartAsync` создаёт пул по `mvkmodbus.json`, загружает и
+проверяет уставки. `RunAsync` поднимает watcher’ы, оценивает пороги и вызывает
+callback только на переходах состояний. Гистерезис не даёт тревоге «дребезжать»
+на границе: для порога `4.5` и гистерезиса `0.2` снятие происходит ниже `4.3`.
+
+**Предостережения.**
+
+- Уставки не записываются в МВК01 и не требуют `AllowConfigurationWrite`.
+- Один `WatchAsync`/`RunAsync` на сервис; для второго потребителя используйте
+  `Channel<T>`/SignalR, а не второй цикл опроса.
+- `Unknown` при потере связи не считается `Active`: реакция сама решает,
+  поднимать ли тревогу.
+- Ошибка callback логируется и не останавливает наблюдение.
+- Защёлка и квитирование в первой версии не поддерживаются — только автосброс.
+
+---
+
+## 22. Реакции на тревоги: callback и webhook
+
+**Задача.** На активную тревогу отправить уведомление во внешнюю систему,
+не блокируя основной мониторинг навсегда и не теряя события при ошибке HTTP.
+
+**Решение.** `RunAsync` + `HttpClient` + журнал. Ошибки реакции изолирует
+`RunAsync`.
+
+```csharp
+using System;
+using System.Net.Http;
+using System.Net.Http.Json;
+using System.Threading;
+using System.Threading.Tasks;
+using Mvk.MVK01.Setpoints;
+
+internal static class Program
+{
+    private static readonly HttpClient Http = new()
+    {
+        Timeout = TimeSpan.FromSeconds(5)
+    };
+
+    private static async Task Main()
+    {
+        await using Mvk01AlarmService alarms = await Mvk01AlarmService.StartAsync(
+            "mvkmodbus.json",
+            "mvk-setpoints.json");
+
+        using CancellationTokenSource cts = new();
+        Console.CancelKeyPress += (_, eventArgs) =>
+        {
+            eventArgs.Cancel = true;
+            cts.Cancel();
+        };
+
+        try
+        {
+            await alarms.RunAsync(async (alarm, token) =>
+            {
+                if (alarm.State != MvkSetpointState.Active)
+                {
+                    return;
+                }
+
+                Console.WriteLine(
+                    $"{alarm.Timestamp:HH:mm:ss}  ТРЕВОГА: {alarm.Setpoint.Name} "
+                    + $"= {alarm.Value:F3}");
+
+                await Http.PostAsJsonAsync(
+                    "https://example.local/api/mvk-alarms",
+                    new
+                    {
+                        device = alarm.DeviceId,
+                        setpoint = alarm.Setpoint.Id,
+                        severity = alarm.Setpoint.Severity.ToString(),
+                        value = alarm.Value,
+                        timestamp = alarm.Timestamp
+                    },
+                    token);
+            }, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+}
+```
+
+**Пояснение.** Callback вызывается последовательно для каждого события.
+Если HTTP вернул ошибку или истёк таймаут, `RunAsync` логирует исключение и
+продолжает наблюдение. Событие при этом не повторяется автоматически — для
+гарантированной доставки нужна очередь (например, `Channel<T>` + retry).
+
+**Предостережения.**
+
+- Не выполняйте долгие HTTP-запросы в callback без очереди: они задерживают
+  обработку следующих тревог.
+- Ошибку callback можно увидеть через `Mvk01AlarmOptions.OnReactionError`
+  (в `StartAsync` передайте options с этим обработчиком).
+- Для production используйте `IHttpClientFactory`, Polly/retry и идемпотентный
+  ключ события (`device + setpoint + timestamp`).
+- Webhook должен быть идемпотентным: повторная отправка после сбоя не должна
+  создавать дубль аварии.
+- Не отправляйте в открытый webhook серийные номера и другие чувствительные
+  данные без необходимости.
+- Реакция на `Normal` (снятие) часто важнее самой тревоги — не игнорируйте её
+  в журнале.
+
+---
+
 ## Подводные камни
 
 - **Чётность адреса и количества.** Каждый запрос МВК01 должен иметь чётный
@@ -2702,6 +2892,8 @@ internal static class Program
 - [Пул устройств](05-device-pool.md) — состояния, реконнект и `DeviceStateChanged`.
 - [Ошибки, логирование и метрики](08-errors-logging-metrics.md) — классификация
   ошибок, `RateLimitedLog`, метрики и health-check.
+- [Уставки и тревоги](15-setpoints.md) — JSON/fluent-уставки, гистерезис,
+  состояния и реакции.
 - [Тестирование](09-testing.md) — эмулятор Modbus-slave `MvkTestServer` и
   fake-транспорт: как воспроизвести любой из рецептов без железа.
 - [README](../README.md) — обзор библиотеки, быстрый старт и настройка.

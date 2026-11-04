@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Mvk.Sample.Alarms</RootNamespace>
+    <Description>Пример прикладных уставок и реакций на тревоги МВК01.</Description>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Mvk.MVK01\Mvk.MVK01.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="mvkmodbus.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="mvk-setpoints.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

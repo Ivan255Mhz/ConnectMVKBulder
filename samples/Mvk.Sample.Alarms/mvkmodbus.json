@@ -1,0 +1,20 @@
+{
+  "MvkModbus": {
+    "Defaults": {
+      "Port": 502,
+      "SlaveId": 1,
+      "RequireEvenAddressAndQuantity": true
+    },
+    "Pool": {
+      "ReconnectEnabled": true,
+      "HealthCheckIntervalSeconds": 15
+    },
+    "Devices": [
+      {
+        "Id": "mvk-1",
+        "Name": "МВК01 стенд",
+        "Host": "10.20.0.211"
+      }
+    ]
+  }
+}

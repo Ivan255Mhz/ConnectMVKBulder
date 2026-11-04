@@ -31,6 +31,7 @@ namespace Mvk.MVK01.Tests.Polling
                     cts.Token));
 
             Assert.True(sample.IsSuccess);
+            Assert.Equal("mvk-1", sample.DeviceId);
         }
 
         [Fact]

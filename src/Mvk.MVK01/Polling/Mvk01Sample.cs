@@ -15,6 +15,12 @@ namespace Mvk.MVK01.Polling
         public required DateTimeOffset Timestamp { get; init; }
 
         /// <summary>
+        /// Идентификатор устройства из конфигурации пула.
+        /// Заполняется <see cref="Mvk01Watcher"/>.
+        /// </summary>
+        public string? DeviceId { get; init; }
+
+        /// <summary>
         /// Наблюдаемый параметр.
         /// </summary>
         public required Mvk01PollItem Item { get; init; }

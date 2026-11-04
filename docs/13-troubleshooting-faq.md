@@ -945,6 +945,26 @@ catch (MvkModbusException ex)
 `ReadChannelAsync(1)`: значение СКЗ из `RmsSets` должно совпадать с параметром
 номер 49–72 и с прямым чтением смещений блока канала.
 
+### 4.23. Как задать свои уставки и получать тревоги?
+
+Уставки — прикладной слой, они не записываются в МВК01. Храните их в JSON или
+задавайте fluent-кодом, а оценку порогов и гистерезиса выполняет
+`Mvk01AlarmService`:
+
+```csharp
+await using Mvk01AlarmService alarms = await Mvk01AlarmService.StartAsync(
+    "mvkmodbus.json",
+    "mvk-setpoints.json");
+
+await alarms.RunAsync((alarm, _) =>
+{
+    Console.WriteLine($"{alarm.Setpoint.Name}: {alarm.State} = {alarm.Value:F3}");
+    return ValueTask.CompletedTask;
+}, cancellationToken);
+```
+
+Подробности: [глава 15 «Уставки и тревоги»](15-setpoints.md), рецепты 21–22.
+
 ---
 
 ## 5. Если ничего не помогло

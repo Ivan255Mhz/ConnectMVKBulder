@@ -3,7 +3,7 @@
   <PropertyGroup>
     <RootNamespace>Mvk.MVK01</RootNamespace>
     <PackageId>Mvk.MVK01</PackageId>
-    <Description>Типизированная карта регистров, кодеки и фасад устройства МВК01 (поверх Mvk.Modbus).</Description>
+    <Description>Типизированная карта регистров, кодеки, фасад устройства, наблюдение и прикладные уставки МВК01 (поверх Mvk.Modbus).</Description>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 

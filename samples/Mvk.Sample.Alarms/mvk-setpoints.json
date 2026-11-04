@@ -1,0 +1,27 @@
+{
+  "setpoints": [
+    {
+      "id": "mvk-1/ch1/rms10-1000/warning",
+      "deviceId": "mvk-1",
+      "measurement": "Rms10To1000Acceleration",
+      "channel": 1,
+      "comparison": "Above",
+      "threshold": 4.5,
+      "hysteresis": 0.2,
+      "activationDelay": "00:00:01",
+      "severity": "Warning",
+      "name": "Канал 1: предупреждение"
+    },
+    {
+      "id": "mvk-1/ch1/rms10-1000/alarm",
+      "deviceId": "mvk-1",
+      "measurement": "Rms10To1000Acceleration",
+      "channel": 1,
+      "comparison": "Above",
+      "threshold": 7.1,
+      "hysteresis": 0.3,
+      "severity": "Alarm",
+      "name": "Канал 1: авария"
+    }
+  ]
+}

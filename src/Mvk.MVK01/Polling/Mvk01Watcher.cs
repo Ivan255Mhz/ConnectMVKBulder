@@ -119,6 +119,7 @@ namespace Mvk.MVK01.Polling
                         sample = new Mvk01Sample
                         {
                             Timestamp = DateTimeOffset.UtcNow,
+                            DeviceId = Device.Id,
                             Item = item,
                             Values = values
                         };
@@ -132,6 +133,7 @@ namespace Mvk.MVK01.Polling
                         sample = new Mvk01Sample
                         {
                             Timestamp = DateTimeOffset.UtcNow,
+                            DeviceId = Device.Id,
                             Item = item,
                             Values = Array.Empty<float>(),
                             Error = ex

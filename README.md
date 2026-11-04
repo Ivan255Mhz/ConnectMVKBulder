@@ -19,21 +19,25 @@
   спектральные полосы, системные команды, заводские настройки.
 - **Наблюдение**: `Mvk01Watcher` с `IAsyncEnumerable<Mvk01Sample>` — периодический
   опрос без ручных циклов, ошибки приходят в поток и не прерывают наблюдение.
+- **Уставки и тревоги**: прикладные пороги в JSON или fluent-коде, гистерезис,
+  задержка срабатывания, уровни Warning/Alarm/Trip и поток событий.
 - **Конфигурация**: секция `MvkModbus` (JSON, переменные окружения, DI) с валидацией и наследованием.
 - **Тестирование без железа**: эмулятор Modbus-slave, молчащий сервер, программируемый транспорт.
-- **202 теста**: транспорт, пайплайн, пул, карта регистров, кодеки, фасад, наблюдение, безопасность записи.
+- **236 тестов**: транспорт, пайплайн, пул, карта регистров, кодеки, фасад, наблюдение,
+  безопасность записи, уставки и гистерезис.
 
 ## Состав решения
 
 | Проект | Назначение |
 |---|---|
 | `src/Mvk.Modbus` | Конфигурация, транспорт Modbus/TCP, пайплайн middleware, пул устройств, DI |
-| `src/Mvk.MVK01` | Типизированная карта регистров МВК01, кодеки, фасад устройства, `Mvk01Connection` |
+| `src/Mvk.MVK01` | Типизированная карта регистров МВК01, кодеки, фасад устройства, `Mvk01Connection`, watcher и уставки |
 | `tests/Mvk.Testing` | Эмулятор Modbus-slave, молчащий сервер и программируемый транспорт для тестов |
 | `tests/Mvk.Modbus.Tests` | Тесты транспорта, пайплайна, пула и конфигурации |
-| `tests/Mvk.MVK01.Tests` | Тесты карты регистров, кодеков и фасада |
+| `tests/Mvk.MVK01.Tests` | Тесты карты регистров, кодеков, фасада, watcher’а и уставок |
 | `samples/Mvk.Sample.Console` | Пример: DI, свой middleware, обзор устройства и режим `watch` |
 | `samples/Mvk.Sample.Polling` | Минимальный пример: опрос СКЗ 10…1000 Гц через `Mvk01Watcher` каждые 0,5 с |
+| `samples/Mvk.Sample.Alarms` | Пример: JSON-уставки, `Mvk01AlarmService` и реакции на тревоги |
 
 Зависимости: [NModbus 3.0.81](https://www.nuget.org/packages/NModbus) (изолирован внутри `Mvk.Modbus`),
 `Microsoft.Extensions.*`, `System.Text.Encoding.CodePages` (кодовая страница 1251 в `Mvk.MVK01`).
@@ -49,6 +53,7 @@ dotnet build ConnectMVKBulder.sln
 dotnet test
 dotnet run --project samples\Mvk.Sample.Console
 dotnet run --project samples\Mvk.Sample.Polling
+dotnet run --project samples\Mvk.Sample.Alarms
 dotnet pack ConnectMVKBulder.sln -c Release -o nupkgs
 ```
 
@@ -162,6 +167,29 @@ await foreach (Mvk01Sample sample in watcher.WatchAsync(
 Первый опрос выполняется сразу; ошибки приходят в `sample.Error` и не прерывают
 наблюдение; отмена — через `cancellationToken`.
 
+### 5. Уставки и тревоги
+
+```csharp
+using Mvk.MVK01.Setpoints;
+
+await using Mvk01AlarmService alarms = await Mvk01AlarmService.StartAsync(
+    "mvkmodbus.json",
+    "mvk-setpoints.json");
+
+await alarms.RunAsync((alarm, _) =>
+{
+    Console.WriteLine(
+        $"{alarm.DeviceId} {alarm.Setpoint.Name}: "
+        + $"{alarm.PreviousState} -> {alarm.State} = {alarm.Value:F3}");
+
+    return ValueTask.CompletedTask;
+}, cancellationToken);
+```
+
+Пороги хранятся в приложении, а не в МВК01. Уставка задаёт параметр, канал,
+порог, гистерезис, задержку и важность. События приходят только при переходах
+`Normal → Active`, `Active → Normal` и `Unknown`.
+
 ## Документация
 
 | № | Глава | Уровень |
@@ -182,6 +210,7 @@ await foreach (Mvk01Sample sample in watcher.WatchAsync(
 | 12b | [Справочник API: Mvk.MVK01](docs/12b-api-reference-mvk-mvk01.md) | справочный |
 | 13 | [Диагностика и FAQ](docs/13-troubleshooting-faq.md) | справочный |
 | 14 | [Упаковка и публикация](docs/14-packaging.md) | практический |
+| 15 | [Уставки и тревоги](docs/15-setpoints.md) | практический |
 
 Первоисточник карты регистров устройства: [MVK01_registers.txt](MVK01_registers.txt).
 
