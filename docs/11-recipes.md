@@ -29,8 +29,14 @@
 13. [WPF: ViewModel устройства](#12-wpf-viewmodel-устройства)
 14. [Диагностика устройства](#13-диагностика-устройства)
 15. [Длительная недоступность](#14-длительная-недоступность)
-16. [Подводные камни](#подводные-камни)
-17. [См. также](#см-также)
+16. [Наблюдение за несколькими параметрами](#15-наблюдение-за-несколькими-параметрами-через-mvk01watcher)
+17. [Сводный монитор нескольких устройств](#16-сводный-монитор-нескольких-устройств)
+18. [Топ-N полос спектра](#17-топ-n-полос-спектра)
+19. [Живой веб-монитор (SSE)](#18-живой-веб-монитор-aspnet-core-sse)
+20. [Health-check пула](#19-health-check-пула-устройств)
+21. [Резервная копия конфигурации](#20-резервная-копия-конфигурации-каналов)
+22. [Подводные камни](#подводные-камни)
+23. [См. также](#см-также)
 
 ---
 
@@ -159,60 +165,11 @@ internal static class Program
 }
 ```
 
-**Вариант с `Mvk01Watcher`.** Цикл, интервал и обработку ошибок можно не писать вручную:
-
-```csharp
-using System;
-using System.Threading;
-using System.Threading.Tasks;
-using Mvk.MVK01;
-using Mvk.MVK01.Polling;
-
-internal static class Program
-{
-    private static async Task Main()
-    {
-        await using Mvk01Connection mvk = await Mvk01Connection.ConnectAsync("10.20.0.211");
-
-        using CancellationTokenSource cts = new();
-        Console.CancelKeyPress += (_, eventArgs) =>
-        {
-            eventArgs.Cancel = true;
-            cts.Cancel();
-        };
-
-        Mvk01Watcher watcher = new(mvk.Device, TimeSpan.FromMilliseconds(500));
-        Mvk01PollItem item = new(
-            Mvk01MeasurementNumber.Rms10To1000Acceleration,
-            channel: 1);
-
-        try
-        {
-            await foreach (Mvk01Sample sample in watcher.WatchAsync(item, cts.Token))
-            {
-                if (sample.Error is { } error)
-                {
-                    Console.WriteLine($"{sample.Timestamp.ToLocalTime():HH:mm:ss.fff}  ошибка: {error.ErrorKind} — {error.Message}");
-                    continue;
-                }
-
-                Console.WriteLine($"{sample.Timestamp.ToLocalTime():HH:mm:ss.fff}  канал 1: {sample.ChannelValue:F4} м/с2");
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            Console.WriteLine("Опрос остановлен.");
-        }
-    }
-}
-```
-
-`Mvk01Watcher` выполняет первый запрос сразу, затем выдерживает интервал от
-начала цикла и не накладывает запросы. Ошибки приходят в `sample.Error`,
-поэтому `try/catch` вокруг каждого опроса не нужен.
+> Для большинства приложений ручной цикл не нужен: `Mvk01Watcher` берёт на себя
+> интервал, отмену и обработку ошибок. Готовый вариант — рецепт 15.
 
 **Готовый пример.** Этот рецепт собран в отдельном проекте `samples/Mvk.Sample.Polling`
-(использует `Mvk01Watcher`):
+(использует `Mvk01Watcher`, см. рецепт 15):
 
 ```powershell
 dotnet run --project samples\Mvk.Sample.Polling                    # до Ctrl+C
@@ -1093,6 +1050,8 @@ mvk-3        Connected                       0.9812
   обслуживания и сокеты останутся жить после выхода.
 - Устройства с `Enabled = false` вернут `DeviceDisabled` — это не сбой связи;
   исключайте их из обхода заранее.
+- Если нужен неблокирующий сводный поток от нескольких устройств, используйте
+  `Mvk01Watcher` на каждое устройство и слияние `IAsyncEnumerable` — рецепт 16.
 
 ---
 
@@ -2005,6 +1964,664 @@ internal sealed class RateLimitedLog
 
 ---
 
+## 15. Наблюдение за несколькими параметрами через Mvk01Watcher
+
+**Задача.** Каждые 0,5 с получать несколько параметров (например, СКЗ 10…1000 Гц
+и СКЗ X…25 кГц) по каналу 1, не писать цикл с `PeriodicTimer` и не терять
+наблюдение при временной ошибке связи.
+
+**Решение.** `Mvk01Watcher` выполняет по одному запросу
+`ReadMeasurementByNumberAsync` на каждый `Mvk01PollItem` за цикл.
+
+```csharp
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using Mvk.MVK01;
+using Mvk.MVK01.Polling;
+
+internal static class Program
+{
+    private static async Task Main()
+    {
+        await using Mvk01Connection mvk = await Mvk01Connection.ConnectAsync("10.20.0.211");
+
+        using CancellationTokenSource cts = new();
+        Console.CancelKeyPress += (_, eventArgs) =>
+        {
+            eventArgs.Cancel = true;
+            cts.Cancel();
+        };
+
+        Mvk01Watcher watcher = new(mvk.Device, TimeSpan.FromMilliseconds(500));
+
+        Mvk01PollItem[] items =
+        [
+            new(Mvk01MeasurementNumber.Rms10To1000Acceleration, channel: 1),
+            new(Mvk01MeasurementNumber.RmsX25kHzAcceleration, channel: 1)
+        ];
+
+        try
+        {
+            await foreach (Mvk01Sample sample in watcher.WatchAsync(items, cts.Token))
+            {
+                if (sample.Error is { } error)
+                {
+                    Console.WriteLine($"{sample.Timestamp.ToLocalTime():HH:mm:ss.fff}  "
+                        + $"{sample.Item.Number}: ошибка {error.ErrorKind} — {error.Message}");
+                    continue;
+                }
+
+                Console.WriteLine($"{sample.Timestamp.ToLocalTime():HH:mm:ss.fff}  "
+                    + $"{sample.Item.Number}: {sample.ChannelValue:F4}");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            Console.WriteLine("Наблюдение остановлено.");
+        }
+    }
+}
+```
+
+В фоновой службе:
+
+```csharp
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Mvk.MVK01;
+using Mvk.MVK01.Polling;
+
+public sealed class MvkPollingService : BackgroundService
+{
+    private readonly IMvk01DeviceFactory factory;
+    private readonly ILogger<MvkPollingService> logger;
+
+    public MvkPollingService(
+        IMvk01DeviceFactory factory,
+        ILogger<MvkPollingService> logger)
+    {
+        this.factory = factory;
+        this.logger = logger;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        IMvk01Device device = factory.GetDevice("mvk-1");
+        Mvk01Watcher watcher = new(device, TimeSpan.FromMilliseconds(500));
+
+        Mvk01PollItem item = new(
+            Mvk01MeasurementNumber.Rms10To1000Acceleration,
+            channel: 1);
+
+        await foreach (Mvk01Sample sample in watcher.WatchAsync(item, stoppingToken))
+        {
+            if (sample.Error is { } error)
+            {
+                logger.LogWarning(
+                    "МВК {DeviceId}: {ErrorKind} — {Message}",
+                    device.Id,
+                    error.ErrorKind,
+                    error.Message);
+                continue;
+            }
+
+            logger.LogInformation(
+                "МВК {DeviceId}: СКЗ 10…1000 Гц = {Value:F4} м/с2",
+                device.Id,
+                sample.ChannelValue);
+        }
+    }
+}
+```
+
+**Пояснение.** Первый опрос выполняется сразу, затем интервал отсчитывается
+от начала цикла. Если чтение заняло больше интервала, следующий цикл начнётся
+сразу, но запросы не наложатся. `Values` всегда содержит 8 каналов, а
+`ChannelValue` — значение выбранного `Item.Channel`. Ошибка приходит в
+`sample.Error`, поэтому один сбой не завершает `await foreach`.
+
+**Предостережения.**
+
+- Один `Mvk01Watcher` — один активный цикл на устройство. Не создавайте
+  несколько watcher'ов на одно устройство «для параллельности»: запросы всё
+  равно сериализуются пулом.
+- Watcher опрашивает параметры по номерам, а не полный снимок канала. Для
+  спектра, напряжения и состояния используйте `ReadChannelAsync` (рецепт 3),
+  но не в цикле 0,5 с.
+- У пула есть backoff реконнекта, но watcher продолжает попытки с заданным
+  интервалом и выдаёт ошибки. Если устройство долго недоступно, увеличьте
+  интервал или приостановите наблюдение.
+- Отмена — это `OperationCanceledException`; не превращайте её в ошибку связи.
+
+---
+
+## 16. Сводный монитор нескольких устройств
+
+**Задача.** Получать единый поток значений от нескольких МВК01, не блокируя
+быстрое устройство медленным, и видеть, от какого устройства пришёл каждый
+сэмпл.
+
+**Решение.** По одному `Mvk01Watcher` на устройство и слияние
+`IAsyncEnumerable` через `System.Threading.Channels`.
+
+```csharp
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Threading.Channels;
+using System.Threading.Tasks;
+using Mvk.Modbus.Configuration;
+using Mvk.Modbus.Pool;
+using Mvk.MVK01;
+using Mvk.MVK01.Polling;
+
+internal static class Program
+{
+    private static async Task Main()
+    {
+        MvkModbusOptions options = new()
+        {
+            Defaults = new MvkDefaultsOptions { RequireEvenAddressAndQuantity = true },
+            Pool = new MvkPoolOptions { ReconnectEnabled = true },
+            Devices =
+            [
+                new MvkDeviceOptions { Id = "mvk-1", Host = "10.20.0.211" },
+                new MvkDeviceOptions { Id = "mvk-2", Host = "10.20.0.212" }
+            ]
+        };
+
+        await using MvkDevicePool pool = new(options);
+        IMvk01DeviceFactory factory = new Mvk01DeviceFactory(pool);
+
+        Mvk01PollItem item = new(
+            Mvk01MeasurementNumber.Rms10To1000Acceleration,
+            channel: 1);
+
+        using CancellationTokenSource cts = new();
+        Console.CancelKeyPress += (_, eventArgs) =>
+        {
+            eventArgs.Cancel = true;
+            cts.Cancel();
+        };
+
+        IAsyncEnumerable<DeviceSample>[] streams = factory.Devices
+            .Select(device => WatchDeviceAsync(device, item, cts.Token))
+            .ToArray();
+
+        try
+        {
+            await foreach (DeviceSample result in MergeAsync(streams, cts.Token))
+            {
+                Mvk01Sample sample = result.Sample;
+
+                if (sample.Error is { } error)
+                {
+                    Console.WriteLine($"{sample.Timestamp.ToLocalTime():HH:mm:ss.fff}  "
+                        + $"{result.DeviceId}: ошибка {error.ErrorKind}");
+                    continue;
+                }
+
+                Console.WriteLine($"{sample.Timestamp.ToLocalTime():HH:mm:ss.fff}  "
+                    + $"{result.DeviceId}: {sample.ChannelValue:F4} м/с2");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private static async IAsyncEnumerable<DeviceSample> WatchDeviceAsync(
+        IMvk01Device device,
+        Mvk01PollItem item,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        Mvk01Watcher watcher = new(device, TimeSpan.FromMilliseconds(500));
+
+        await foreach (Mvk01Sample sample in watcher.WatchAsync(item, cancellationToken))
+        {
+            yield return new DeviceSample(device.Id, sample);
+        }
+    }
+
+    private static async IAsyncEnumerable<T> MergeAsync<T>(
+        IReadOnlyList<IAsyncEnumerable<T>> sources,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        using CancellationTokenSource linked =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        Channel<T> channel = Channel.CreateUnbounded<T>(new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            SingleWriter = false
+        });
+
+        Task[] producers = sources
+            .Select(source => PumpAsync(source, channel.Writer, linked.Token))
+            .ToArray();
+
+        _ = CompleteWhenDoneAsync(producers, channel.Writer);
+
+        try
+        {
+            await foreach (T item in channel.Reader.ReadAllAsync(linked.Token))
+            {
+                yield return item;
+            }
+        }
+        finally
+        {
+            linked.Cancel();
+        }
+    }
+
+    private static async Task PumpAsync<T>(
+        IAsyncEnumerable<T> source,
+        ChannelWriter<T> writer,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await foreach (T item in source.WithCancellation(cancellationToken))
+            {
+                await writer.WriteAsync(item, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            writer.TryComplete(exception);
+            throw;
+        }
+    }
+
+    private static async Task CompleteWhenDoneAsync<T>(Task[] producers, ChannelWriter<T> writer)
+    {
+        try
+        {
+            await Task.WhenAll(producers);
+            writer.TryComplete();
+        }
+        catch (Exception exception)
+        {
+            writer.TryComplete(exception);
+        }
+    }
+
+    private sealed record DeviceSample(string DeviceId, Mvk01Sample Sample);
+}
+```
+
+**Пояснение.** Каждый watcher живёт своим темпом; `Channel<T>` собирает
+результаты в один поток. В отличие от последовательного обхода из рецепта 9,
+медленное или недоступное устройство не задерживает остальные. Ошибки также
+приходят сэмплами с `Error`, поэтому одно устройство не завершает общий поток.
+
+**Предостережения.**
+
+- `CreateUnbounded` не оказывает backpressure: если потребитель медленный,
+  очередь растёт. Для десятков устройств и тяжёлой обработки используйте
+  `Channel.CreateBounded<T>` с `FullMode.Wait` и осознанно выбирайте размер.
+- Один watcher на устройство; не создавайте новый watcher на каждый запрос
+  или HTTP-вызов.
+- `Mvk01Sample` не содержит `DeviceId`, поэтому в примере используется
+  обёртка `DeviceSample`. Не теряйте идентификатор при логировании.
+- При завершении `await foreach` (break) срабатывает `finally`: связанный
+  `CancellationTokenSource` отменяет producers. Не убирайте этот блок.
+- Для WPF/UI маршалируйте обновления в UI-поток: сам поток асинхронный, но
+  не привязан к `Dispatcher`.
+
+---
+
+## 17. Топ-N полос спектра
+
+**Задача.** По снимку канала быстро найти самые сильные полосы дольоктавного
+спектра — для диагностики, отчёта или подсветки на графике.
+
+**Решение.** `ReadChannelAsync` возвращает 43 полосы; сортируем по значению
+и берём N наибольших.
+
+```csharp
+using System;
+using System.Linq;
+using Mvk.MVK01;
+
+internal static class Program
+{
+    private static async Task Main()
+    {
+        await using Mvk01Connection mvk = await Mvk01Connection.ConnectAsync("10.20.0.211");
+
+        Mvk01Channel channel = await mvk.ReadChannelAsync(1);
+
+        var bands = channel.Spectrum
+            .Select((value, index) => (Band: index + 1, Value: value))
+            .Where(item => float.IsFinite(item.Value))
+            .ToArray();
+
+        float total = bands.Sum(item => item.Value);
+
+        Console.WriteLine($"Канал {channel.Channel}, полос: {channel.Spectrum.Length}");
+        Console.WriteLine($"{"№",3} {"полоса",-10} {"частота",12} {"значение",12} {"доля",7}");
+
+        foreach (var item in bands.OrderByDescending(item => item.Value).Take(5))
+        {
+            double frequency = Mvk01SpectrumBands.GetCenterFrequency(item.Band);
+            float share = total > 0 ? item.Value / total * 100f : 0f;
+
+            Console.WriteLine(
+                $"{item.Band,3} {Mvk01SpectrumBands.FormatBand(item.Band),-10} "
+                + $"{frequency,10:F2} Гц {item.Value,12:F4} {share,6:F1}%");
+        }
+    }
+}
+```
+
+Пример вывода:
+
+```
+Канал 1, полос: 43
+  № полоса          частота     значение    доля
+ 25 160 Гц          160.00 Гц       0.8421   18.4%
+ 26 200 Гц          200.00 Гц       0.7310   16.0%
+ 24 125 Гц          125.00 Гц       0.6104   13.3%
+```
+
+**Пояснение.** `Spectrum` — 43 значения в порядке возрастания средних частот
+(0,63 Гц … 10 кГц). Единицы зависят от `SpectrumDataType` устройства
+(ускорение, скорость или перемещение); подписи полос не содержат единиц.
+`Mvk01SpectrumBands.GetCenterFrequency` даёт частоту, `FormatBand` — готовую
+подпись. «Доля» здесь — доля амплитуды, а не энергии: для энергии возводите
+значения в квадрат.
+
+**Предостережения.**
+
+- `ReadChannelAsync` делает 5 запросов; не вызывайте его каждые 0,5 с ради
+  топа полос — используйте параметры по номерам или увеличьте период.
+- Проверяйте `float.IsFinite`: `NaN`/`Infinity` испортят сортировку и отчёт.
+- Топ-N — диагностика, а не замена порогам СКЗ и зонам контроля. Не принимайте
+  решение «красная зона» только по наибольшей полосе.
+- `FormatBand` использует текущую культуру; для CSV и API фиксируйте
+  `InvariantCulture` и передавайте частоту числом.
+
+---
+
+## 18. Живой веб-монитор (ASP.NET Core SSE)
+
+**Задача.** Отдавать значения МВК01 в браузер без polling со стороны клиента:
+одно HTTP-соединение, поток событий `text/event-stream`.
+
+**Решение.** Minimal API + `Mvk01Watcher` + `Results.Stream`. Проект должен
+использовать `Microsoft.NET.Sdk.Web`.
+
+```csharp
+using System.Text.Json;
+using Mvk.Modbus.DependencyInjection;
+using Mvk.MVK01;
+using Mvk.MVK01.DependencyInjection;
+using Mvk.MVK01.Polling;
+
+WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+
+builder.Configuration.AddJsonFile("mvkmodbus.json", optional: false);
+builder.Services.AddMvkModbus(builder.Configuration);
+builder.Services.AddMvk01Devices();
+
+WebApplication app = builder.Build();
+
+app.MapGet("/api/mvk/{id}/stream", (
+    string id,
+    IMvk01DeviceFactory factory,
+    CancellationToken cancellationToken) =>
+{
+    IMvk01Device device = factory.GetDevice(id);
+    Mvk01Watcher watcher = new(device, TimeSpan.FromMilliseconds(500));
+
+    Mvk01PollItem item = new(
+        Mvk01MeasurementNumber.Rms10To1000Acceleration,
+        channel: 1);
+
+    return Results.Stream(async stream =>
+    {
+        await using StreamWriter writer = new(stream);
+
+        await foreach (Mvk01Sample sample in watcher.WatchAsync(item, cancellationToken))
+        {
+            string json = JsonSerializer.Serialize(new
+            {
+                timestamp = sample.Timestamp,
+                device = device.Id,
+                error = sample.Error?.ErrorKind.ToString(),
+                value = sample.ChannelValue
+            });
+
+            await writer.WriteAsync($"data: {json}\n\n".AsMemory(), cancellationToken);
+            await writer.FlushAsync();
+        }
+    }, "text/event-stream");
+});
+
+app.Run();
+```
+
+Клиент:
+
+```html
+<script>
+const source = new EventSource('/api/mvk/mvk-1/stream');
+
+source.onmessage = event => {
+    const data = JSON.parse(event.data);
+    console.log(data.timestamp, data.device, data.value, data.error);
+};
+</script>
+```
+
+**Пояснение.** Формат SSE — строка `data: <json>` и пустая строка после неё.
+`Results.Stream` оставляет HTTP-соединение открытым; `CancellationToken`
+запроса завершает watcher при отключении клиента. Ошибка устройства приходит
+в поле `error`, поток не рвётся.
+
+**Предостережения.**
+
+- Каждый HTTP-клиент создаёт свой watcher и свой цикл опроса. Для одного-двух
+  операторов это нормально; для десятков клиентов сделайте singleton-опрос и
+  рассылку через `Channel<T>`/SignalR.
+- Проверьте таймауты reverse proxy (nginx, IIS): SSE-соединение должно жить
+  дольше периода опроса; при необходимости настройте keep-alive. Для nginx
+  часто нужен `X-Accel-Buffering: no`, иначе события придут пачкой.
+- Не включайте запись конфигурации ради монитора: `AddMvk01Devices()` работает
+  в режиме «только чтение».
+- Не сериализуйте `float.NaN` в JSON без проверки: `System.Text.Json` по
+  умолчанию бросит исключение. В примере значения СКЗ обычно конечны, но
+  для диагностики проверяйте `float.IsFinite`.
+- Для браузера нужен HTTPS/тот же origin; `EventSource` не отправляет
+  пользовательские заголовки авторизации — используйте cookie или токен в URL
+  с осторожностью.
+
+---
+
+## 19. Health-check пула устройств
+
+**Задача.** Отдавать `/health` для мониторинга: все ли включённые МВК01 на
+связи, и какие устройства в состоянии `Faulted`.
+
+**Решение.** `IHealthCheck` читает состояние пула, не выполняя лишних запросов
+к устройствам.
+
+```csharp
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Mvk.Modbus;
+using Mvk.Modbus.Pool;
+
+public sealed class MvkPoolHealthCheck : IHealthCheck
+{
+    private readonly IMvkDevicePool pool;
+
+    public MvkPoolHealthCheck(IMvkDevicePool pool)
+    {
+        this.pool = pool;
+    }
+
+    public Task<HealthCheckResult> CheckHealthAsync(
+        HealthCheckContext context,
+        CancellationToken cancellationToken = default)
+    {
+        List<string> failures = [];
+
+        foreach (IMvkDevice device in pool.Devices)
+        {
+            if (!device.Settings.Enabled)
+            {
+                continue;
+            }
+
+            if (device.State == MvkDeviceState.Faulted)
+            {
+                MvkModbusException? error = device.LastError;
+                failures.Add($"{device.Settings.Id}: {error?.ErrorKind.ToString() ?? "Faulted"}");
+            }
+        }
+
+        if (failures.Count == 0)
+        {
+            return Task.FromResult(
+                HealthCheckResult.Healthy($"МВК: устройств в пуле — {pool.Devices.Count}"));
+        }
+
+        return Task.FromResult(
+            HealthCheckResult.Degraded(
+                $"МВК: проблемных устройств — {failures.Count}",
+                data: new Dictionary<string, object> { ["devices"] = failures }));
+    }
+}
+```
+
+Регистрация в ASP.NET Core:
+
+```csharp
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+
+builder.Services.AddHealthChecks()
+    .AddCheck<MvkPoolHealthCheck>("mvk-pool", tags: ["mvk"]);
+
+// ...
+
+app.MapHealthChecks("/health/mvk");
+```
+
+**Пояснение.** `Disconnected` — нормальное состояние после idle-отключения;
+`Faulted` означает потерю связи или серию временных ошибок. Проверка не
+обращается к устройству, поэтому безопасна для частого вызова и не мешает
+опросу. `LastError` содержит последнюю ошибку, если она была.
+
+**Предостережения.**
+
+- Не вызывайте `EnsureConnectedAsync` внутри health-check без необходимости:
+  это добавляет запросы и может конфликтовать с основным циклом опроса.
+- `Faulted` — не единственный плохой сценарий: устройство может быть
+  `Connected`, но давно не опрашиваться. Если это важно, добавьте проверку
+  `LastRequestAt` и порог «данные устарели».
+- `DeviceDisabled` не считается ошибкой — такие устройства пропускаются.
+- В Worker Service пакет `Microsoft.Extensions.Diagnostics.HealthChecks`
+  подключается отдельно; в ASP.NET Core он доступен через Web SDK.
+
+---
+
+## 20. Резервная копия конфигурации каналов
+
+**Задача.** Сохранить конфигурацию всех 8 каналов АЦП в читаемый JSON для
+аудита, сравнения версий и восстановления после замены оборудования.
+
+**Решение.** `ReadChannelConfigAsync` для каждого канала и
+`System.Text.Json` с отступами.
+
+```csharp
+using System;
+using System.Collections.Generic;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using System.Threading.Tasks;
+using Mvk.MVK01;
+
+internal static class Program
+{
+    private static async Task Main()
+    {
+        await using Mvk01Connection mvk = await Mvk01Connection.ConnectAsync("10.20.0.211");
+
+        List<Mvk01ChannelConfig> configs = new(Mvk01RegisterMap.MaxChannels);
+
+        for (int channel = 1; channel <= Mvk01RegisterMap.MaxChannels; channel++)
+        {
+            configs.Add(await mvk.ReadChannelConfigAsync(channel));
+        }
+
+        JsonSerializerOptions options = new()
+        {
+            WriteIndented = true,
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        };
+
+        string json = JsonSerializer.Serialize(configs, options);
+        string path = $"mvk-channel-config-{DateTime.Now:yyyyMMdd-HHmmss}.json";
+
+        await File.WriteAllTextAsync(path, json);
+        Console.WriteLine($"Сохранено: {path}");
+    }
+}
+```
+
+Фрагмент результата:
+
+```json
+[
+  {
+    "Channel": 1,
+    "ChannelType": 0,
+    "SensorFactor": 1.25,
+    "OverloadThreshold": 0.9,
+    "Units": "м/с2",
+    "SerialNumber": "SN-42",
+    "FilterX25kHz": 2,
+    "Filter1LowBand": 5,
+    "Filter1HighBand": 20,
+    "Filter2LowBand": 3,
+    "Filter2HighBand": 30,
+    "MaxDcVoltage": 15.5,
+    "MinDcVoltage": -15.5
+  }
+]
+```
+
+**Пояснение.** Один канал — 5 запросов, все 8 каналов — 40 запросов; запускайте
+бэкап при вводе в эксплуатацию, перед изменением настроек и после ремонта, а не
+в цикле мониторинга. `UnsafeRelaxedJsonEscaping` сохраняет «м/с2» читаемым,
+а не в виде `\u043C`. `Mvk01ChannelConfig` содержит имена единиц и серийники
+датчиков, но не секреты.
+
+**Предостережения.**
+
+- Это **только чтение**. Автоматическое восстановление не показано: запись
+  требует `AllowConfigurationWrite = true`, проверки каждого поля и `Save`
+  (см. рецепты 7 и 8). Не записывайте JSON обратно «слепо».
+- Перед восстановлением сравните прошивку, тип датчика и единицы: конфигурация
+  от другого стенда может быть опасной.
+- `Mvk01ChannelConfig` не содержит всех резервных и служебных регистров блока;
+  для полного клона устройства нужен отдельный аудит карты регистров.
+- Файл может содержать серийные номера датчиков — не публикуйте его в открытых
+  артефактах без необходимости.
+
+---
+
 ## Подводные камни
 
 - **Чётность адреса и количества.** Каждый запрос МВК01 должен иметь чётный
@@ -2082,6 +2699,9 @@ internal sealed class RateLimitedLog
   снимки, команды и взаимодействие с пулом.
 - [Пайплайн middleware](06-pipeline-middleware.md) — таймауты, повторы, защита
   записи, логирование и собственные обработчики запросов.
+- [Пул устройств](05-device-pool.md) — состояния, реконнект и `DeviceStateChanged`.
+- [Ошибки, логирование и метрики](08-errors-logging-metrics.md) — классификация
+  ошибок, `RateLimitedLog`, метрики и health-check.
 - [Тестирование](09-testing.md) — эмулятор Modbus-slave `MvkTestServer` и
   fake-транспорт: как воспроизвести любой из рецептов без железа.
 - [README](../README.md) — обзор библиотеки, быстрый старт и настройка.

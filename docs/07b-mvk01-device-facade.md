@@ -1003,20 +1003,8 @@ await foreach (Mvk01Sample sample in watcher.WatchAsync(item, cts.Token))
 }
 ```
 
-Несколько параметров за один цикл:
-
-```csharp
-Mvk01PollItem[] items =
-[
-    new(Mvk01MeasurementNumber.Rms10To1000Acceleration, channel: 1),
-    new(Mvk01MeasurementNumber.RmsX25kHzAcceleration, channel: 1)
-];
-
-await foreach (Mvk01Sample sample in watcher.WatchAsync(items, cts.Token))
-{
-    Console.WriteLine($"{sample.Item.Number}: {sample.ChannelValue:F4}");
-}
-```
+Несколько параметров за один цикл передаются массивом `Mvk01PollItem[]`;
+полный пример — в рецепте 15.
 
 Поведение:
 
@@ -1036,34 +1024,8 @@ await foreach (Mvk01Sample sample in watcher.WatchAsync(items, cts.Token))
 спектром и состоянием используйте `ReadChannelAsync` в собственном цикле —
 это другой профиль нагрузки (5 запросов вместо одного).
 
-В фоновой службе:
-
-```csharp
-public sealed class Mvk01PollingService : BackgroundService
-{
-    private readonly IMvk01DeviceFactory factory;
-    private readonly ILogger<Mvk01PollingService> logger;
-
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        IMvk01Device device = factory.GetDevice("mvk-1");
-        Mvk01Watcher watcher = new(device, TimeSpan.FromMilliseconds(500));
-
-        await foreach (Mvk01Sample sample in watcher.WatchAsync(
-            new Mvk01PollItem(Mvk01MeasurementNumber.Rms10To1000Acceleration, 1),
-            stoppingToken))
-        {
-            if (sample.Error is { } error)
-            {
-                logger.LogWarning("МВК: {ErrorKind} — {Message}", error.ErrorKind, error.Message);
-                continue;
-            }
-
-            logger.LogInformation("СКЗ 10…1000 Гц: {Value:F4} м/с2", sample.ChannelValue);
-        }
-    }
-}
-```
+Полные примеры фоновой службы, опроса нескольких параметров и слияния потоков
+от нескольких устройств — в [рецептах 15 и 16](11-recipes.md).
 
 ---
 
