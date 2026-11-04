@@ -617,8 +617,7 @@ builder.Configuration.AddJsonFile(
     optional: false,
     reloadOnChange: false);
 
-builder.Services.AddMvkModbus(builder.Configuration);
-builder.Services.AddMvk01Devices();
+builder.Services.AddMvk01(builder.Configuration);
 ```
 
 3. Программно — `new MvkDevicePool(new MvkModbusOptions { ... })`.

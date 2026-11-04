@@ -177,6 +177,43 @@ namespace Mvk.MVK01.Tests
         }
 
         [Fact]
+        public async Task ReadValueAsync_ReturnsSelectedChannel()
+        {
+            await using MvkTestServer server = MvkTestServer.Start();
+
+            float[] expected = [1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f];
+            SeedFloats(server, Mvk01RegisterMap.MeasurementByNumber(55), expected);
+
+            await using MvkDevicePool pool = CreatePool(server.Port);
+            Mvk01Device device = new(pool.GetDevice("mvk-1"));
+
+            float value = await device.ReadValueAsync(
+                Mvk01MeasurementNumber.Rms10To1000Acceleration,
+                channel: 3);
+
+            float[] values = await device.ReadValuesAsync(
+                Mvk01MeasurementNumber.Rms10To1000Acceleration);
+
+            Assert.Equal(3f, value);
+            Assert.Equal(expected, values);
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(9)]
+        public async Task ReadValueAsync_InvalidChannel_Throws(int channel)
+        {
+            await using MvkTestServer server = MvkTestServer.Start();
+            await using MvkDevicePool pool = CreatePool(server.Port);
+            Mvk01Device device = new(pool.GetDevice("mvk-1"));
+
+            await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+                () => device.ReadValueAsync(
+                    Mvk01MeasurementNumber.Rms10To1000Acceleration,
+                    channel));
+        }
+
+        [Fact]
         public async Task ReadMeasurementByNumberAsync_ReturnsAllChannels()
         {
             await using MvkTestServer server = MvkTestServer.Start();

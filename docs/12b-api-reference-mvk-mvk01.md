@@ -1127,6 +1127,13 @@ public sealed class Mvk01Connection : IAsyncDisposable
 | `public Task<Mvk01Channel> ReadChannelAsync(int channel, CancellationToken cancellationToken = default)` | Читает полный снимок канала АЦП |
 | `public Task<Mvk01ChannelConfig> ReadChannelConfigAsync(int channel, CancellationToken cancellationToken = default)` | Читает конфигурацию канала АЦП |
 | `public Task<Mvk01TachoMeasurement> ReadTachoAsync(int tacho, CancellationToken cancellationToken = default)` | Читает снимок канала тахометра |
+| `public Task<float> ReadValueAsync(Mvk01MeasurementNumber number, int channel = 1, CancellationToken cancellationToken = default)` | Читает значение одного канала |
+| `public Task<float> ReadValueAsync(int number, int channel = 1, CancellationToken cancellationToken = default)` | То же по числовому номеру параметра |
+| `public Task<float[]> ReadValuesAsync(Mvk01MeasurementNumber number, CancellationToken cancellationToken = default)` | Читает параметр по всем 8 каналам |
+| `public Task<float[]> ReadValuesAsync(int number, CancellationToken cancellationToken = default)` | То же по числовому номеру параметра |
+| `public IAsyncEnumerable<Mvk01Sample> WatchAsync(Mvk01MeasurementNumber number, int channel = 1, TimeSpan? interval = null, CancellationToken cancellationToken = default)` | Периодическое наблюдение за параметром и каналом |
+| `public IAsyncEnumerable<Mvk01Sample> WatchAsync(int number, int channel = 1, TimeSpan? interval = null, CancellationToken cancellationToken = default)` | То же по числовому номеру параметра |
+| `public IAsyncEnumerable<Mvk01Sample> WatchAsync(IReadOnlyList<Mvk01PollItem> items, TimeSpan? interval = null, CancellationToken cancellationToken = default)` | Наблюдение за набором параметров |
 | `public Task<Mvk01CommandResult> ExecuteSystemCommandAsync(Mvk01SystemCommand command, TimeSpan? timeout = null, CancellationToken cancellationToken = default)` | Выполняет системную команду с ожиданием статуса |
 | `public Task<Mvk01CommandResult> SaveConfigurationAsync(CancellationToken cancellationToken = default)` | Сохраняет конфигурацию во Flash |
 | `public ValueTask DisposeAsync()` | Закрывает соединение и освобождает пул |
@@ -1141,6 +1148,7 @@ await using Mvk01Connection mvk = await Mvk01Connection.ConnectAsync("10.20.0.21
 
 Mvk01DeviceInfo info = await mvk.ReadDeviceInfoAsync();
 Mvk01Channel channel = await mvk.ReadChannelAsync(1);
+float rms = await mvk.ReadValueAsync(Mvk01MeasurementNumber.Rms10To1000Acceleration, 1);
 
 // Команды Restore/Reboot доступны через свойство Device:
 Mvk01CommandResult restored = await mvk.Device.RestoreConfigurationAsync();
@@ -1216,6 +1224,8 @@ public static class Mvk01ServiceCollectionExtensions
 
 | Сигнатура | Описание |
 |---|---|
+| `public static IServiceCollection AddMvk01(this IServiceCollection services, IConfiguration configuration, string sectionName = "MvkModbus")` | Одним вызовом: `AddMvkModbus` + `AddMvk01Devices` |
+| `public static IServiceCollection AddMvk01(this IServiceCollection services, Action<MvkModbusOptions> configure)` | То же с программной настройкой |
 | `public static IServiceCollection AddMvk01Devices(this IServiceCollection services)` | Регистрирует фабрику типизированных устройств МВК01 и включает обязательную настройку чётности; `services == null` — `ArgumentNullException` |
 
 Что делает метод:
@@ -1229,7 +1239,8 @@ public static class Mvk01ServiceCollectionExtensions
    `new Mvk01DeviceFactory(provider.GetRequiredService<IMvkDevicePool>())`
    (кодировка по умолчанию — `Mvk01Codec.DefaultTextEncoding`, cp1251).
 
-Вызывать после `AddMvkModbus` — фабрике нужен зарегистрированный `IMvkDevicePool`.
+`AddMvk01Devices` вызывать после `AddMvkModbus` — фабрике нужен
+зарегистрированный `IMvkDevicePool`. `AddMvk01` делает оба вызова сам.
 
 ```csharp
 using Mvk.MVK01;
@@ -1238,8 +1249,7 @@ using Mvk.MVK01.DependencyInjection;
 HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
 builder.Configuration.AddJsonFile("mvkmodbus.json", optional: false);
 
-builder.Services.AddMvkModbus(builder.Configuration);   // пул + конфигурация + валидация
-builder.Services.AddMvk01Devices();                     // типизированный слой МВК01
+builder.Services.AddMvk01(builder.Configuration);   // AddMvkModbus + AddMvk01Devices
 
 using IHost host = builder.Build();
 await host.StartAsync();
@@ -1317,6 +1327,16 @@ public sealed class Mvk01Watcher
     public TimeSpan Interval { get; }
 
     public IAsyncEnumerable<Mvk01Sample> WatchAsync(
+        Mvk01MeasurementNumber number,
+        int channel = 1,
+        CancellationToken cancellationToken = default);
+
+    public IAsyncEnumerable<Mvk01Sample> WatchAsync(
+        int number,
+        int channel = 1,
+        CancellationToken cancellationToken = default);
+
+    public IAsyncEnumerable<Mvk01Sample> WatchAsync(
         Mvk01PollItem item,
         CancellationToken cancellationToken = default);
 
@@ -1332,8 +1352,36 @@ public sealed class Mvk01Watcher
 | `public Mvk01Watcher(IMvk01Device device, TimeSpan interval)` | `interval <= 0` — `ArgumentOutOfRangeException` |
 | `public IMvk01Device Device { get; }` | Наблюдаемое устройство |
 | `public TimeSpan Interval { get; }` | Интервал между циклами |
+| `WatchAsync(Mvk01MeasurementNumber, int channel, ...)` | Короткая форма для одного параметра и канала |
+| `WatchAsync(int number, int channel, ...)` | То же по числовому номеру параметра |
 | `WatchAsync(Mvk01PollItem item, ...)` | Наблюдение за одним параметром; `item == null` — `ArgumentNullException` |
 | `WatchAsync(IReadOnlyList<Mvk01PollItem> items, ...)` | Наблюдение за набором; пустой список или `null`-элемент — `ArgumentException` |
+
+### 9.4 `Mvk01DeviceExtensions`
+
+```csharp
+namespace Mvk.MVK01;
+```
+
+Расширения для `IMvk01Device` с теми же компактными операциями:
+
+```csharp
+float value = await device.ReadValueAsync(number, channel: 1, ct);
+float[] values = await device.ReadValuesAsync(number, ct);
+
+await foreach (Mvk01Sample sample in device.WatchAsync(
+    number,
+    channel: 1,
+    interval: TimeSpan.FromMilliseconds(500),
+    ct))
+{
+    // ...
+}
+```
+
+Доступны overload'ы с `Mvk01MeasurementNumber` и `int`, а также
+`WatchAsync(Mvk01PollItem, ...)` и `WatchAsync(IReadOnlyList<Mvk01PollItem>, ...)`.
+
 
 Поведение:
 

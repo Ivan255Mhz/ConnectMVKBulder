@@ -51,13 +51,17 @@ public sealed class Mvk01Connection : IAsyncDisposable
 | `ReadChannelAsync(channel, ct)` | `Task<Mvk01Channel>` | Полный снимок канала АЦП |
 | `ReadChannelConfigAsync(channel, ct)` | `Task<Mvk01ChannelConfig>` | Конфигурация канала АЦП |
 | `ReadTachoAsync(tacho, ct)` | `Task<Mvk01TachoMeasurement>` | Снимок канала тахометра |
+| `ReadValueAsync(number, channel = 1, ct)` | `Task<float>` | Значение одного канала |
+| `ReadValuesAsync(number, ct)` | `Task<float[]>` | Значения параметра по всем 8 каналам |
+| `WatchAsync(number, channel = 1, interval?, ct)` | `IAsyncEnumerable<Mvk01Sample>` | Периодическое наблюдение за одним параметром |
+| `WatchAsync(items, interval?, ct)` | `IAsyncEnumerable<Mvk01Sample>` | Наблюдение за набором параметров |
 | `ExecuteSystemCommandAsync(command, timeout?, ct)` | `Task<Mvk01CommandResult>` | Системная команда с ожиданием статуса |
 | `SaveConfigurationAsync(ct)` | `Task<Mvk01CommandResult>` | Сохранить конфигурацию во Flash |
 | `DisposeAsync()` | `ValueTask` | Закрыть соединение и освободить пул |
 
-Обратите внимание: у `Mvk01Connection` нет методов `ReadMeasurementByNumberAsync`,
-`ReadMeasurementRawByNumberAsync`, `RestoreConfigurationAsync` и `RebootAsync` —
-они доступны через свойство `Device` (см. раздел 2).
+Обратите внимание: у `Mvk01Connection` нет методов `ReadMeasurementRawByNumberAsync`,
+`RestoreConfigurationAsync` и `RebootAsync` — они доступны через свойство `Device`
+(см. раздел 2).
 
 ### 1.2 Что делает ConnectAsync
 
@@ -101,40 +105,38 @@ public static async Task<Mvk01Connection> ConnectAsync(
 ### 1.3 Полный пример консольного приложения
 
 ```csharp
-using System;
-using System.Threading.Tasks;
 using Mvk.MVK01;
 
-internal static class Program
-{
-    private static async Task Main()
-    {
-        await using Mvk01Connection mvk = await Mvk01Connection.ConnectAsync("10.20.0.211");
-        // порт 502, SlaveId 1, BigEndian, реконнект — по умолчанию
+await using var mvk = await Mvk01Connection.ConnectAsync("10.20.0.211");
+// порт 502, SlaveId 1, BigEndian, реконнект — по умолчанию
 
-        IMvk01Device device = mvk.Device;
-        Console.WriteLine($"Устройство: {device.Id} ({device.Settings.Endpoint}), состояние: {device.State}");
+Console.WriteLine(
+    $"Устройство: {mvk.Device.Id} ({mvk.Device.Settings.Endpoint}), "
+    + $"состояние: {mvk.Device.State}");
 
-        Mvk01DeviceInfo info = await device.ReadDeviceInfoAsync();
-        Console.WriteLine($"Серийный номер: {info.SerialNumber}");
-        Console.WriteLine($"ПО: {info.FirmwareVersion}, наработка: {info.Uptime}");
-        Console.WriteLine($"Карта памяти: {info.MemoryCardKilobytes} КБ, "
-            + $"ошибки: 0x{info.Errors.Raw:X8} (чисто: {info.Errors.IsClean})");
-        Console.WriteLine($"Агрегат 1: {info.Unit1State.Zone}, агрегат 2: {info.Unit2State.Zone}");
+Mvk01DeviceInfo info = await mvk.ReadDeviceInfoAsync();
+Console.WriteLine($"Серийный номер: {info.SerialNumber}");
+Console.WriteLine($"ПО: {info.FirmwareVersion}, наработка: {info.Uptime}");
+Console.WriteLine($"Карта памяти: {info.MemoryCardKilobytes} КБ, "
+    + $"ошибки: 0x{info.Errors.Raw:X8} (чисто: {info.Errors.IsClean})");
+Console.WriteLine($"Агрегат 1: {info.Unit1State.Zone}, агрегат 2: {info.Unit2State.Zone}");
 
-        Mvk01Channel channel = await device.ReadChannelAsync(1);
-        Console.WriteLine();
-        Console.WriteLine($"Канал 1: напряжение {channel.SensorVoltage:F2} В, "
-            + $"пик-фактор {channel.PeakFactor:F2}, СКЗ X…25 кГц {channel.RmsX25kHzAcceleration:F3} м/с2");
-        Console.WriteLine($"  СКЗ 10…1000 Гц: {channel.RmsSets[2].Acceleration:F3} м/с2");
-        Console.WriteLine($"  Полос спектра: {channel.Spectrum.Length}");
+Mvk01Channel channel = await mvk.ReadChannelAsync(1);
+Console.WriteLine();
+Console.WriteLine($"Канал 1: напряжение {channel.SensorVoltage:F2} В, "
+    + $"пик-фактор {channel.PeakFactor:F2}, СКЗ X…25 кГц {channel.RmsX25kHzAcceleration:F3} м/с2");
+Console.WriteLine($"  СКЗ 10…1000 Гц: {channel.RmsSets[2].Acceleration:F3} м/с2");
+Console.WriteLine($"  Полос спектра: {channel.Spectrum.Length}");
 
-        Mvk01TachoMeasurement tacho = await device.ReadTachoAsync(1);
-        Console.WriteLine();
-        Console.WriteLine($"Тахометр 1: {tacho.FrequencyHz:F2} Гц, "
-            + $"направление {tacho.Direction}, переходов {tacho.TransitionCount}");
-    }
-}
+float rms = await mvk.ReadValueAsync(
+    Mvk01MeasurementNumber.Rms10To1000Acceleration,
+    channel: 1);
+Console.WriteLine($"  Быстрое значение: {rms:F3} м/с2");
+
+Mvk01TachoMeasurement tacho = await mvk.ReadTachoAsync(1);
+Console.WriteLine();
+Console.WriteLine($"Тахометр 1: {tacho.FrequencyHz:F2} Гц, "
+    + $"направление {tacho.Direction}, переходов {tacho.TransitionCount}");
 ```
 
 Пример вывода (числа — из замеров на стенде и тестовых сценариев;
@@ -161,8 +163,10 @@ internal static class Program
 
 ### 1.4 Ограничения простого входа
 
-- **Нет чтения по номерам.** `ReadMeasurementByNumberAsync` вызывается через
-  `mvk.Device.<...>` — свойство `Device` даёт полный `IMvk01Device`.
+- **Точечное чтение — через удобные методы.** Для одного значения используйте
+  `ReadValueAsync`, для всех каналов — `ReadValuesAsync`, для периодического
+  опроса — `WatchAsync`. Сырые регистры и `ReadMeasurementRawByNumberAsync`
+  остаются в `mvk.Device`.
 - **Идентификатор — адрес.** Два устройства с одинаковым IP, но разными портами
   или `SlaveId` так подключить нельзя: `Id` = `host.Trim()`. Нужна конфигурация
   с разными `Id` и пул/DI (см. [главу 3](03-configuration.md)).
@@ -863,8 +867,7 @@ builder.Configuration.AddJsonFile(
     optional: false,
     reloadOnChange: false);
 
-builder.Services.AddMvkModbus(builder.Configuration);
-builder.Services.AddMvk01Devices();
+builder.Services.AddMvk01(builder.Configuration);       // AddMvkModbus + AddMvk01Devices
 builder.Services.AddMvkModbusHostedService();
 
 using IHost host = builder.Build();
@@ -1000,6 +1003,19 @@ await foreach (Mvk01Sample sample in watcher.WatchAsync(item, cts.Token))
     }
 
     Console.WriteLine($"{sample.Timestamp.ToLocalTime():HH:mm:ss.fff}  {sample.ChannelValue:F4} м/с2");
+}
+```
+
+Если устройство уже обёрнуто в `Mvk01Connection`, тот же цикл короче:
+
+```csharp
+await foreach (Mvk01Sample sample in mvk.WatchAsync(
+    Mvk01MeasurementNumber.Rms10To1000Acceleration,
+    channel: 1,
+    interval: TimeSpan.FromMilliseconds(500),
+    cts.Token))
+{
+    Console.WriteLine(sample.ChannelValue);
 }
 ```
 

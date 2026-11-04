@@ -46,13 +46,13 @@ internal static class Program
             cts.Cancel();
         };
 
-        // Наблюдатель сам читает параметр по номеру и возвращает значения всех 8 каналов.
-        Mvk01Watcher watcher = new(mvk.Device, PollInterval);
-        Mvk01PollItem item = new(Mvk01MeasurementNumber.Rms10To1000Acceleration, channel);
-
         try
         {
-            await foreach (Mvk01Sample sample in watcher.WatchAsync(item, cts.Token))
+            await foreach (Mvk01Sample sample in mvk.WatchAsync(
+                Mvk01MeasurementNumber.Rms10To1000Acceleration,
+                channel,
+                PollInterval,
+                cts.Token))
             {
                 if (sample.Error is { } error)
                 {

@@ -17,13 +17,15 @@
 - **Пайплайн middleware**: валидация, retry, логирование, метрики, свои обработчики.
 - **Типизированный слой МВК01**: снимки каналов и тахометров, измерения по номерам,
   спектральные полосы, системные команды, заводские настройки.
+- **Компактный API**: `ReadValueAsync`, `ReadValuesAsync`, `WatchAsync` и
+  `AddMvk01` — типовые операции в одну строку.
 - **Наблюдение**: `Mvk01Watcher` с `IAsyncEnumerable<Mvk01Sample>` — периодический
   опрос без ручных циклов, ошибки приходят в поток и не прерывают наблюдение.
 - **Уставки и тревоги**: прикладные пороги в JSON или fluent-коде, гистерезис,
   задержка срабатывания, уровни Warning/Alarm/Trip и поток событий.
 - **Конфигурация**: секция `MvkModbus` (JSON, переменные окружения, DI) с валидацией и наследованием.
 - **Тестирование без железа**: эмулятор Modbus-slave, молчащий сервер, программируемый транспорт.
-- **236 тестов**: транспорт, пайплайн, пул, карта регистров, кодеки, фасад, наблюдение,
+- **242 теста**: транспорт, пайплайн, пул, карта регистров, кодеки, фасад, наблюдение,
   безопасность записи, уставки и гистерезис.
 
 ## Состав решения
@@ -90,6 +92,11 @@ Console.WriteLine($"ПО: {info.FirmwareVersion}, серийный: {info.Serial
 
 Mvk01Channel channel = await mvk.ReadChannelAsync(1);
 Console.WriteLine($"Напряжение: {channel.SensorVoltage:F4} В, СКЗ X…25кГц: {channel.RmsX25kHzAcceleration:F3} м/с2");
+
+float rms = await mvk.ReadValueAsync(
+    Mvk01MeasurementNumber.Rms10To1000Acceleration,
+    channel: 1);
+Console.WriteLine($"СКЗ 10…1000 Гц: {rms:F3} м/с2");
 ```
 
 `ConnectAsync` сразу проверяет связь: если устройство недоступно — выбрасывается
@@ -126,8 +133,7 @@ HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
 builder.Configuration.AddJsonFile(
     Path.Combine(AppContext.BaseDirectory, "mvkmodbus.json"), optional: false);
 
-builder.Services.AddMvkModbus(builder.Configuration);   // пул + конфигурация + валидация
-builder.Services.AddMvk01Devices();                     // типизированный слой МВК01
+builder.Services.AddMvk01(builder.Configuration);       // AddMvkModbus + AddMvk01Devices
 builder.Services.AddMvkModbusHostedService();           // лог состава пула при старте
 
 using IHost host = builder.Build();
@@ -137,21 +143,22 @@ IMvk01DeviceFactory factory = host.Services.GetRequiredService<IMvk01DeviceFacto
 Mvk01Channel channel = await factory.Devices.First().ReadChannelAsync(1);
 ```
 
-> Порядок вызовов: сначала `AddMvkModbus`, затем `AddMvk01Devices`.
+> `AddMvk01` — это `AddMvkModbus` + `AddMvk01Devices` одним вызовом.
 > `AddMvk01Devices` включает обязательную для МВК01 настройку чётности адреса и
 > количества регистров. Запись конфигурации по умолчанию запрещена: включите
 > `Defaults.AllowConfigurationWrite = true` явно.
 
-### 4. Периодический опрос через `Mvk01Watcher`
+### 4. Периодический опрос
 
 ```csharp
-using Mvk.MVK01.Polling;
+using Mvk.MVK01;
 
 IMvk01Device device = factory.Devices.First();
-Mvk01Watcher watcher = new(device, TimeSpan.FromMilliseconds(500));
 
-await foreach (Mvk01Sample sample in watcher.WatchAsync(
-    new Mvk01PollItem(Mvk01MeasurementNumber.Rms10To1000Acceleration, channel: 1),
+await foreach (var sample in device.WatchAsync(
+    Mvk01MeasurementNumber.Rms10To1000Acceleration,
+    channel: 1,
+    interval: TimeSpan.FromMilliseconds(500),
     cancellationToken))
 {
     if (sample.Error is { } error)

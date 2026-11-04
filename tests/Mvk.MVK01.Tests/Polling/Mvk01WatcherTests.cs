@@ -27,7 +27,8 @@ namespace Mvk.MVK01.Tests.Polling
 
             Mvk01Sample sample = await FirstAsync(
                 watcher.WatchAsync(
-                    new Mvk01PollItem(Mvk01MeasurementNumber.Rms10To1000Acceleration),
+                    Mvk01MeasurementNumber.Rms10To1000Acceleration,
+                    channel: 1,
                     cts.Token));
 
             Assert.True(sample.IsSuccess);

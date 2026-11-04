@@ -932,7 +932,7 @@ public sealed class DeviceTimeoutTests
 | `Transport/NModbusTransportTests.cs` | транспорт против `MvkTestServer` и `SilentTcpServer`, переподключение, `MapException` |
 | `TestDeviceSettings.cs`, `FakeTransport.cs` | внутренние помощники тест-проекта: быстрые настройки и транспорт с задержкой/счётчиками |
 
-`tests/Mvk.MVK01.Tests` — 113 тестов (79 `[Fact]` + 13 `[Theory]` c 34
+`tests/Mvk.MVK01.Tests` — 119 тестов (83 `[Fact]` + 14 `[Theory]` c 36
 вариантами `[InlineData]`):
 
 | Файл | Что покрыто |
@@ -940,7 +940,7 @@ public sealed class DeviceTimeoutTests
 | `Mvk01RegisterMapTests.cs` | адреса каналов, тахометров, параметров по номерам |
 | `Mvk01CodecTests.cs` | версия ПО, битовые поля, cp1251 и swap-строки, команды |
 | `Mvk01DeviceTests.cs` | снимки канала/тахометра/конфигурации, параметры по номерам, команды |
-| `Mvk01ConnectionTests.cs` | режим «только чтение» по умолчанию, opt-in запись, защищённая область, Save без разрешения |
+| `Mvk01ConnectionTests.cs` | режим «только чтение» по умолчанию, opt-in запись, защищённая область, Save без разрешения, `ReadValueAsync`/`WatchAsync` |
 | `Polling/Mvk01WatcherTests.cs` | периодический опрос, интервал, ошибки, отмена, валидация |
 | `Setpoints/MvkSetpointEngineTests.cs` | гистерезис Above/Below/Outside/Inside, задержка, `Unknown`, несколько уровней |
 | `Setpoints/MvkSetpointSetTests.cs` | fluent-набор, auto-id, валидация |

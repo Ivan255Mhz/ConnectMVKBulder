@@ -1,4 +1,5 @@
 using System;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -13,6 +14,44 @@ namespace Mvk.MVK01.DependencyInjection
     /// </summary>
     public static class Mvk01ServiceCollectionExtensions
     {
+        /// <summary>
+        /// Одним вызовом регистрирует пул МВК и типизированный слой МВК01.
+        /// Эквивалентно <c>AddMvkModbus(...)</c> + <c>AddMvk01Devices()</c>.
+        /// </summary>
+        /// <param name="services">Коллекция служб.</param>
+        /// <param name="configuration">Конфигурация с секцией <c>MvkModbus</c>.</param>
+        /// <param name="sectionName">Имя секции конфигурации.</param>
+        public static IServiceCollection AddMvk01(
+            this IServiceCollection services,
+            IConfiguration configuration,
+            string sectionName = MvkModbusServiceCollectionExtensions.DefaultSectionName)
+        {
+            ArgumentNullException.ThrowIfNull(services);
+            ArgumentNullException.ThrowIfNull(configuration);
+
+            services.AddMvkModbus(configuration, sectionName);
+            services.AddMvk01Devices();
+            return services;
+        }
+
+        /// <summary>
+        /// Одним вызовом регистрирует пул МВК и типизированный слой МВК01
+        /// с программной настройкой.
+        /// </summary>
+        /// <param name="services">Коллекция служб.</param>
+        /// <param name="configure">Настройка конфигурации.</param>
+        public static IServiceCollection AddMvk01(
+            this IServiceCollection services,
+            Action<MvkModbusOptions> configure)
+        {
+            ArgumentNullException.ThrowIfNull(services);
+            ArgumentNullException.ThrowIfNull(configure);
+
+            services.AddMvkModbus(configure);
+            services.AddMvk01Devices();
+            return services;
+        }
+
         /// <summary>
         /// Регистрирует фабрику типизированных устройств МВК01 и включает обязательную
         /// для этого устройства настройку чётности адреса и количества регистров.

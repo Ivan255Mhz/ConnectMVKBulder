@@ -52,15 +52,12 @@
 пул и включает чётность адресов; запись конфигурации по умолчанию запрещена):
 
 ```csharp
-using System;
-using System.Threading;
-using System.Threading.Tasks;
-using Mvk.Modbus.Pool;
 using Mvk.MVK01;
 
-await using Mvk01Connection mvk = await Mvk01Connection.ConnectAsync("10.20.0.211");
-IMvk01Device device = mvk.Device;              // типизированный фасад
-IMvkDevice raw = mvk.Device.Device;            // сырые регистры и настройки
+await using var mvk = await Mvk01Connection.ConnectAsync("10.20.0.211");
+
+// Верхний уровень: mvk.ReadValueAsync / ReadValuesAsync / WatchAsync.
+// Полный API доступен через mvk.Device, сырые регистры — через mvk.Device.Device.
 ```
 
 **Вариант B — пул или DI, несколько устройств** (`AddMvk01Devices()` включает
@@ -78,8 +75,7 @@ using Mvk.MVK01.DependencyInjection;
 
 HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
 builder.Configuration.AddJsonFile("mvkmodbus.json", optional: false);
-builder.Services.AddMvkModbus(builder.Configuration);
-builder.Services.AddMvk01Devices();
+builder.Services.AddMvk01(builder.Configuration);       // AddMvkModbus + AddMvk01Devices
 builder.Services.AddMvkModbusHostedService();
 
 using IHost host = builder.Build();
@@ -92,13 +88,27 @@ IMvk01Device device = factory.GetDevice("mvk-1");
 | Сценарий | Что использовать |
 |---|---|
 | Одно устройство, быстрый старт | `Mvk01Connection.ConnectAsync(host)` |
-| Несколько устройств, JSON-конфигурация | `AddMvkModbus` + `AddMvk01Devices` + `IMvk01DeviceFactory` |
+| Несколько устройств, JSON-конфигурация | `AddMvk01` + `IMvk01DeviceFactory` |
 | Пул без DI | `new MvkDevicePool(options)` + `new Mvk01Device(pool.GetDevice(id))` (см. рецепт 8) |
 
-Для частых опросов предпочтительны параметры по номеру
-(`ReadMeasurementByNumberAsync`) и прямое чтение пары регистров; для редкой
-диагностики — снимки `ReadChannelAsync` / `ReadDeviceInfoAsync`, которые делают
-по 3–5 запросов.
+Для частых опросов используйте `ReadValueAsync`/`WatchAsync`; для параметра
+по всем каналам — `ReadValuesAsync`; для редкой диагностики — снимки
+`ReadChannelAsync` / `ReadDeviceInfoAsync`, которые делают по 3–5 запросов.
+
+Общий помощник для консольных примеров:
+
+```csharp
+static CancellationTokenSource CreateConsoleCancellation()
+{
+    CancellationTokenSource cts = new();
+    Console.CancelKeyPress += (_, eventArgs) =>
+    {
+        eventArgs.Cancel = true;
+        cts.Cancel();
+    };
+    return cts;
+}
+```
 
 ---
 
@@ -107,71 +117,49 @@ IMvk01Device device = factory.GetDevice("mvk-1");
 **Задача.** Каждые 0,5 с получать СКЗ виброускорения 10…1000 Гц по каналу 1,
 корректно завершаться по Ctrl+C и не «падать» при временной потере связи.
 
-**Решение.** `ReadMeasurementByNumberAsync` с `PeriodicTimer`. Номер параметра
-`Rms10To1000Acceleration` = 55; вызов возвращает значения всех 8 каналов
-одним запросом, канал 1 — это `values[0]`.
+**Решение.** `Mvk01Connection.WatchAsync` создаёт watcher и возвращает
+`IAsyncEnumerable<Mvk01Sample>`.
 
 ```csharp
 using System;
 using System.Threading;
-using System.Threading.Tasks;
-using Mvk.Modbus;
 using Mvk.MVK01;
+using Mvk.MVK01.Polling;
 
-internal static class Program
+using var cts = CreateConsoleCancellation();
+await using var mvk = await Mvk01Connection.ConnectAsync("10.20.0.211");
+
+try
 {
-    private static async Task Main()
+    await foreach (Mvk01Sample sample in mvk.WatchAsync(
+        Mvk01MeasurementNumber.Rms10To1000Acceleration,
+        channel: 1,
+        interval: TimeSpan.FromMilliseconds(500),
+        cts.Token))
     {
-        await using Mvk01Connection mvk = await Mvk01Connection.ConnectAsync("10.20.0.211");
-        IMvk01Device device = mvk.Device;
-
-        using CancellationTokenSource cts = new();
-        Console.CancelKeyPress += (_, eventArgs) =>
+        if (sample.Error is { } error)
         {
-            eventArgs.Cancel = true;   // не завершать процесс аварийно
-            cts.Cancel();
-        };
-
-        Console.WriteLine("СКЗ виброускорения 10…1000 Гц, канал 1 (Ctrl+C — стоп):");
-        using PeriodicTimer timer = new(TimeSpan.FromMilliseconds(500));
-
-        try
-        {
-            while (await timer.WaitForNextTickAsync(cts.Token))
-            {
-                try
-                {
-                    float[] values = await device.ReadMeasurementByNumberAsync(
-                        Mvk01MeasurementNumber.Rms10To1000Acceleration,
-                        cts.Token);
-
-                    Console.WriteLine($"{DateTime.Now:HH:mm:ss.fff}  канал 1: {values[0]:F4} м/с2");
-                }
-                catch (MvkModbusException ex) when (ex.IsTransient)
-                {
-                    // Связь: реконнект уже выполняется фоном, продолжаем опрос.
-                    Console.WriteLine($"{DateTime.Now:HH:mm:ss.fff}  нет связи ({ex.ErrorKind}), ждём реконнект");
-                }
-                catch (MvkModbusException ex)
-                {
-                    // Данные/конфигурация: без исправления запроса повтор не поможет.
-                    Console.WriteLine($"{DateTime.Now:HH:mm:ss.fff}  ошибка: {ex.ErrorKind} — {ex.Message}");
-                }
-            }
+            Console.WriteLine(
+                $"{sample.Timestamp.ToLocalTime():HH:mm:ss.fff}  ошибка: {error.ErrorKind}");
+            continue;
         }
-        catch (OperationCanceledException)
-        {
-            Console.WriteLine("Опрос остановлен.");
-        }
+
+        Console.WriteLine(
+            $"{sample.Timestamp.ToLocalTime():HH:mm:ss.fff}  "
+            + $"канал 1: {sample.ChannelValue:F4} м/с2");
     }
+}
+catch (OperationCanceledException)
+{
+    Console.WriteLine("Опрос остановлен.");
 }
 ```
 
-> Для большинства приложений ручной цикл не нужен: `Mvk01Watcher` берёт на себя
-> интервал, отмену и обработку ошибок. Готовый вариант — рецепт 15.
+Ручной цикл с `PeriodicTimer` и полным `try/catch` оставлен в
+[главе 07b](07b-mvk01-device-facade.md), раздел 8.2 — для понимания внутренностей.
 
 **Готовый пример.** Этот рецепт собран в отдельном проекте `samples/Mvk.Sample.Polling`
-(использует `Mvk01Watcher`, см. рецепт 15):
+(использует компактный `mvk.WatchAsync`):
 
 ```powershell
 dotnet run --project samples\Mvk.Sample.Polling                    # до Ctrl+C
@@ -265,58 +253,50 @@ internal static class Program
 таблицу: например, СКЗ X…25 кГц (N = 48), СКЗ 10…1000 Гц (N = 55) и напряжение
 (N = 1). При необходимости — прочитать «сырое» битовое поле.
 
-**Решение.** `ReadMeasurementByNumberAsync` возвращает `float[8]`;
+**Решение.** `ReadValuesAsync` возвращает `float[8]`;
 `ReadMeasurementRawByNumberAsync` — `ushort[16]` без декодирования.
 
 ```csharp
 using System;
 using System.Linq;
-using System.Threading.Tasks;
 using Mvk.Modbus.Protocol;
 using Mvk.MVK01;
 
-internal static class Program
+await using var mvk = await Mvk01Connection.ConnectAsync("10.20.0.211");
+
+PrintRow(
+    "N=48  СКЗ виброускорения X…25 кГц, м/с2",
+    await mvk.ReadValuesAsync(Mvk01MeasurementNumber.RmsX25kHzAcceleration));
+
+PrintRow(
+    "N=55  СКЗ виброускорения 10…1000 Гц, м/с2",
+    await mvk.ReadValuesAsync(Mvk01MeasurementNumber.Rms10To1000Acceleration));
+
+PrintRow(
+    "N=1   Напряжение на датчике, В",
+    await mvk.ReadValuesAsync(Mvk01MeasurementNumber.SensorVoltage));
+
+// Любой параметр можно прочитать числовым номером (1–184).
+PrintRow(
+    "N=57  СКЗ виброперемещения 10…1000 Гц, мкм",
+    await mvk.ReadValuesAsync(57));
+
+// Битовые поля без декодирования: параметр 80 — состояние канала.
+ushort[] raw = await mvk.Device.ReadMeasurementRawByNumberAsync(Mvk01MeasurementNumber.ChannelState);
+Mvk01ChannelState channel1 = Mvk01Codec.DecodeChannelState(
+    RegisterCodec.ToUInt32(raw.AsSpan(0, 2), mvk.Device.Settings.ByteOrder));
+
+Console.WriteLine($"Состояние канала 1: перегрузка — {channel1.Overload}, "
+    + $"DC выше макс. — {channel1.DcVoltageAboveMaximum} (0x{channel1.Raw:X8})");
+
+static void PrintRow(string title, float[] values)
 {
-    private static async Task Main()
-    {
-        await using Mvk01Connection mvk = await Mvk01Connection.ConnectAsync("10.20.0.211");
-        IMvk01Device device = mvk.Device;
-
-        PrintRow(
-            "N=48  СКЗ виброускорения X…25 кГц, м/с2",
-            await device.ReadMeasurementByNumberAsync(Mvk01MeasurementNumber.RmsX25kHzAcceleration));
-
-        PrintRow(
-            "N=55  СКЗ виброускорения 10…1000 Гц, м/с2",
-            await device.ReadMeasurementByNumberAsync(Mvk01MeasurementNumber.Rms10To1000Acceleration));
-
-        PrintRow(
-            "N=1   Напряжение на датчике, В",
-            await device.ReadMeasurementByNumberAsync(Mvk01MeasurementNumber.SensorVoltage));
-
-        // Любой параметр можно прочитать числовым номером (1–184).
-        PrintRow(
-            "N=57  СКЗ виброперемещения 10…1000 Гц, мкм",
-            await device.ReadMeasurementByNumberAsync(57));
-
-        // Битовые поля без декодирования: параметр 80 — состояние канала.
-        ushort[] raw = await device.ReadMeasurementRawByNumberAsync(Mvk01MeasurementNumber.ChannelState);
-        Mvk01ChannelState channel1 = Mvk01Codec.DecodeChannelState(
-            RegisterCodec.ToUInt32(raw.AsSpan(0, 2), device.Settings.ByteOrder));
-
-        Console.WriteLine($"Состояние канала 1: перегрузка — {channel1.Overload}, "
-            + $"DC выше макс. — {channel1.DcVoltageAboveMaximum} (0x{channel1.Raw:X8})");
-    }
-
-    private static void PrintRow(string title, float[] values)
-    {
-        Console.WriteLine(title);
-        Console.WriteLine("  канал    " + string.Join("  ",
-            Enumerable.Range(1, values.Length).Select(channel => $"{channel,8}")));
-        Console.WriteLine("  значение " + string.Join("  ",
-            values.Select(value => $"{value,8:F4}")));
-        Console.WriteLine();
-    }
+    Console.WriteLine(title);
+    Console.WriteLine("  канал    " + string.Join("  ",
+        Enumerable.Range(1, values.Length).Select(channel => $"{channel,8}")));
+    Console.WriteLine("  значение " + string.Join("  ",
+        values.Select(value => $"{value,8:F4}")));
+    Console.WriteLine();
 }
 ```
 
@@ -369,7 +349,7 @@ internal static class Program
     private static async Task Main()
     {
         await using Mvk01Connection mvk = await Mvk01Connection.ConnectAsync("10.20.0.211");
-        Mvk01Channel channel = await mvk.Device.ReadChannelAsync(1);
+        Mvk01Channel channel = await mvk.ReadChannelAsync(1);
 
         Console.WriteLine($"Канал {channel.Channel}");
         Console.WriteLine($"  Напряжение на датчике : {channel.SensorVoltage,9:F4} В");
@@ -444,7 +424,7 @@ internal static class Program
     private static async Task Main()
     {
         await using Mvk01Connection mvk = await Mvk01Connection.ConnectAsync("10.20.0.211");
-        Mvk01Channel channel = await mvk.Device.ReadChannelAsync(1);
+        Mvk01Channel channel = await mvk.ReadChannelAsync(1);
 
         string spectrumPath = $"mvk01-channel{channel.Channel}-spectrum.csv";
         string rmsPath = $"mvk01-channel{channel.Channel}-rms.csv";
@@ -543,93 +523,76 @@ band;acceleration_m_s2;velocity_mm_s;displacement_um
 
 ```csharp
 using System;
-using System.Threading;
-using System.Threading.Tasks;
 using Mvk.MVK01;
 
-internal static class Program
+await using var mvk = await Mvk01Connection.ConnectAsync("10.20.0.211");
+using var cts = CreateConsoleCancellation();
+
+Mvk01Zone previousZone = Mvk01Zone.Undefined;
+using PeriodicTimer timer = new(TimeSpan.FromSeconds(1));
+
+try
 {
-    private static async Task Main()
+    while (await timer.WaitForNextTickAsync(cts.Token))
     {
-        await using Mvk01Connection mvk = await Mvk01Connection.ConnectAsync("10.20.0.211");
-        IMvk01Device device = mvk.Device;
+        Mvk01DeviceInfo info = await mvk.ReadDeviceInfoAsync(cts.Token);
+        Mvk01UnitState unit1 = info.Unit1State;
 
-        using CancellationTokenSource cts = new();
-        Console.CancelKeyPress += (_, eventArgs) =>
+        if (unit1.Zone != previousZone)
         {
-            eventArgs.Cancel = true;
-            cts.Cancel();
-        };
-
-        Mvk01Zone previousZone = Mvk01Zone.Undefined;
-        using PeriodicTimer timer = new(TimeSpan.FromSeconds(1));
-
-        try
-        {
-            while (await timer.WaitForNextTickAsync(cts.Token))
-            {
-                Mvk01DeviceInfo info = await device.ReadDeviceInfoAsync(cts.Token);
-                Mvk01UnitState unit1 = info.Unit1State;
-
-                if (unit1.Zone != previousZone)
-                {
-                    Console.WriteLine($"{DateTime.Now:HH:mm:ss}  агрегат 1: "
-                        + $"{DescribeZone(previousZone)} -> {DescribeZone(unit1.Zone)}");
-                    previousZone = unit1.Zone;
-                }
-
-                if (unit1.SensorFailureEvent)
-                {
-                    Console.WriteLine("  событие: зафиксирован отказ датчика (бит 9)");
-                }
-
-                if (unit1.EnteredYellowZone)
-                {
-                    Console.WriteLine("  событие: был переход в жёлтую зону (бит 10)");
-                }
-
-                if (unit1.EnteredRedZone)
-                {
-                    Console.WriteLine("  событие: был переход в красную зону (бит 11)");
-                }
-
-                Console.WriteLine($"  агрегат 2: {DescribeZone(info.Unit2State.Zone)} "
-                    + $"(0x{info.Unit2State.Raw:X8})");
-            }
+            Console.WriteLine($"{DateTime.Now:HH:mm:ss}  агрегат 1: "
+                + $"{DescribeZone(previousZone)} -> {DescribeZone(unit1.Zone)}");
+            previousZone = unit1.Zone;
         }
-        catch (OperationCanceledException)
-        {
-        }
-    }
 
-    private static string DescribeZone(Mvk01Zone zone)
-    {
-        return zone switch
+        if (unit1.SensorFailureEvent)
         {
-            Mvk01Zone.Green => "Green (норма)",
-            Mvk01Zone.Yellow => "Yellow (предупреждение)",
-            Mvk01Zone.Red => "Red (авария)",
-            Mvk01Zone.SensorFailure => "SensorFailure (отказ датчика)",
-            Mvk01Zone.InvalidConfiguration => "InvalidConfiguration",
-            _ => "Undefined (зона не определена)"
-        };
+            Console.WriteLine("  событие: зафиксирован отказ датчика (бит 9)");
+        }
+
+        if (unit1.EnteredYellowZone)
+        {
+            Console.WriteLine("  событие: был переход в жёлтую зону (бит 10)");
+        }
+
+        if (unit1.EnteredRedZone)
+        {
+            Console.WriteLine("  событие: был переход в красную зону (бит 11)");
+        }
+
+        Console.WriteLine($"  агрегат 2: {DescribeZone(info.Unit2State.Zone)} "
+            + $"(0x{info.Unit2State.Raw:X8})");
     }
 }
+catch (OperationCanceledException)
+{
+}
+
+static string DescribeZone(Mvk01Zone zone) => zone switch
+{
+    Mvk01Zone.Green => "Green (норма)",
+    Mvk01Zone.Yellow => "Yellow (предупреждение)",
+    Mvk01Zone.Red => "Red (авария)",
+    Mvk01Zone.SensorFailure => "SensorFailure (отказ датчика)",
+    Mvk01Zone.InvalidConfiguration => "InvalidConfiguration",
+    _ => "Undefined (зона не определена)"
+};
 ```
 
 **Вариант «минимальный трафик».** Оба агрегата читаются одним запросом четырёх
 регистров 0x1014–0x1017:
 
 ```csharp
-using System;
 using Mvk.Modbus.Configuration;
 using Mvk.Modbus.Protocol;
 using Mvk.MVK01;
 
-ushort[] raw = await device.Device.ReadHoldingRegistersAsync(
+await using var mvk = await Mvk01Connection.ConnectAsync("10.20.0.211");
+
+ushort[] raw = await mvk.Device.Device.ReadHoldingRegistersAsync(
     Mvk01RegisterMap.Unit1ControlState, 4);                     // 0x1014, 4 регистра
 
-MvkByteOrder order = device.Settings.ByteOrder;
+MvkByteOrder order = mvk.Device.Settings.ByteOrder;
 Mvk01UnitState unit1 = Mvk01Codec.DecodeUnitState(
     RegisterCodec.ToUInt32(raw.AsSpan(0, 2), order));
 Mvk01UnitState unit2 = Mvk01Codec.DecodeUnitState(
@@ -946,76 +909,68 @@ internal static class Program
 ```csharp
 using System;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using Mvk.Modbus;
 using Mvk.Modbus.Configuration;
 using Mvk.Modbus.Pool;
 using Mvk.MVK01;
 
-internal static class Program
+MvkModbusOptions options = new()
 {
-    private static async Task Main()
+    Defaults = new MvkDefaultsOptions { RequireEvenAddressAndQuantity = true },
+    Pool = new MvkPoolOptions { ReconnectEnabled = true, HealthCheckIntervalSeconds = 15 },
+    Devices =
+    [
+        new MvkDeviceOptions { Id = "mvk-1", Name = "Агрегат 1", Host = "10.20.0.211" },
+        new MvkDeviceOptions { Id = "mvk-2", Name = "Агрегат 2", Host = "10.20.0.212" },
+        new MvkDeviceOptions { Id = "mvk-3", Name = "Агрегат 3", Host = "10.20.0.213" }
+    ]
+};
+
+await using var pool = new MvkDevicePool(options);
+IMvk01DeviceFactory factory = new Mvk01DeviceFactory(pool);
+IMvk01Device[] devices = factory.Devices.OrderBy(item => item.Id).ToArray();
+
+using var cts = CreateConsoleCancellation();
+using PeriodicTimer timer = new(TimeSpan.FromSeconds(1));
+
+try
+{
+    while (await timer.WaitForNextTickAsync(cts.Token))
     {
-        MvkModbusOptions options = new()
+        Console.WriteLine($"--- {DateTime.Now:HH:mm:ss} ---");
+        Console.WriteLine($"{"Устройство",-12} {"Состояние",-13} {"Канал 1: СКЗ 10…1000 Гц",24}");
+
+        foreach (IMvk01Device device in devices)
         {
-            Defaults = new MvkDefaultsOptions { RequireEvenAddressAndQuantity = true },
-            Pool = new MvkPoolOptions { ReconnectEnabled = true, HealthCheckIntervalSeconds = 15 },
-            Devices =
-            [
-                new MvkDeviceOptions { Id = "mvk-1", Name = "Агрегат 1", Host = "10.20.0.211" },
-                new MvkDeviceOptions { Id = "mvk-2", Name = "Агрегат 2", Host = "10.20.0.212" },
-                new MvkDeviceOptions { Id = "mvk-3", Name = "Агрегат 3", Host = "10.20.0.213" }
-            ]
-        };
-
-        await using MvkDevicePool pool = new(options);
-
-        // Фабрика кэширует фасады; кодировка нужна для русских строк в конфигурации.
-        IMvk01DeviceFactory factory = new Mvk01DeviceFactory(pool, Mvk01Codec.DefaultTextEncoding);
-        IMvk01Device[] devices = factory.Devices.OrderBy(item => item.Id).ToArray();
-
-        using CancellationTokenSource cts = new();
-        Console.CancelKeyPress += (_, eventArgs) =>
-        {
-            eventArgs.Cancel = true;
-            cts.Cancel();
-        };
-
-        using PeriodicTimer timer = new(TimeSpan.FromSeconds(1));
-        try
-        {
-            while (await timer.WaitForNextTickAsync(cts.Token))
-            {
-                Console.WriteLine($"--- {DateTime.Now:HH:mm:ss} ---");
-                Console.WriteLine($"{"Устройство",-12} {"Состояние",-13} {"Канал 1: СКЗ 10…1000 Гц",24}");
-
-                foreach (IMvk01Device device in devices)
-                {
-                    string value;
-
-                    try
-                    {
-                        float[] values = await device.ReadMeasurementByNumberAsync(
-                            Mvk01MeasurementNumber.Rms10To1000Acceleration, cts.Token);
-                        value = values[0].ToString("F4");
-                    }
-                    catch (MvkModbusException ex) when (ex.IsTransient)
-                    {
-                        value = "нет связи";
-                    }
-                    catch (MvkModbusException ex)
-                    {
-                        value = $"ошибка {ex.ErrorKind}";
-                    }
-
-                    Console.WriteLine($"{device.Id,-12} {device.State,-13} {value,24}");
-                }
-            }
+            string value = await ReadValueSafeAsync(device, cts.Token);
+            Console.WriteLine($"{device.Id,-12} {device.State,-13} {value,24}");
         }
-        catch (OperationCanceledException)
-        {
-        }
+    }
+}
+catch (OperationCanceledException)
+{
+}
+
+static async Task<string> ReadValueSafeAsync(
+    IMvk01Device device,
+    CancellationToken cancellationToken)
+{
+    try
+    {
+        float value = await device.ReadValueAsync(
+            Mvk01MeasurementNumber.Rms10To1000Acceleration,
+            channel: 1,
+            cancellationToken);
+
+        return value.ToString("F4");
+    }
+    catch (MvkModbusException ex) when (ex.IsTransient)
+    {
+        return "нет связи";
+    }
+    catch (MvkModbusException ex)
+    {
+        return $"ошибка {ex.ErrorKind}";
     }
 }
 ```
@@ -1030,8 +985,8 @@ mvk-2        Faulted                       нет связи
 mvk-3        Connected                       0.9812
 ```
 
-**Пояснение.** Каждый вызов `ReadMeasurementByNumberAsync` — это один запрос
-16 регистров, поэтому таблица из десяти устройств стоит 10 запросов в секунду.
+**Пояснение.** Каждый вызов `ReadValueAsync` — это один запрос 16 регистров,
+поэтому таблица из десяти устройств стоит 10 запросов в секунду.
 Устройства пула независимы: ошибка `mvk-2` не влияет на `mvk-1` и `mvk-3`,
 а реконнект `Faulted`-устройства выполняет фоновый цикл пула каждые
 `HealthCheckIntervalSeconds`. `factory.Devices` каждый раз строит новую выборку
@@ -2104,7 +2059,7 @@ public sealed class MvkPollingService : BackgroundService
 быстрое устройство медленным, и видеть, от какого устройства пришёл каждый
 сэмпл.
 
-**Решение.** По одному `Mvk01Watcher` на устройство и слияние
+**Решение.** По одному `WatchAsync` на устройство и слияние
 `IAsyncEnumerable` через `System.Threading.Channels`.
 
 ```csharp
@@ -2180,9 +2135,10 @@ internal static class Program
         Mvk01PollItem item,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        Mvk01Watcher watcher = new(device, TimeSpan.FromMilliseconds(500));
-
-        await foreach (Mvk01Sample sample in watcher.WatchAsync(item, cancellationToken))
+        await foreach (Mvk01Sample sample in device.WatchAsync(
+            item,
+            interval: TimeSpan.FromMilliseconds(500),
+            cancellationToken))
         {
             yield return new DeviceSample(device.Id, sample);
         }
@@ -2358,7 +2314,7 @@ internal static class Program
 **Задача.** Отдавать значения МВК01 в браузер без polling со стороны клиента:
 одно HTTP-соединение, поток событий `text/event-stream`.
 
-**Решение.** Minimal API + `Mvk01Watcher` + `Results.Stream`. Проект должен
+**Решение.** Minimal API + `device.WatchAsync` + `Results.Stream`. Проект должен
 использовать `Microsoft.NET.Sdk.Web`.
 
 ```csharp
@@ -2371,8 +2327,7 @@ using Mvk.MVK01.Polling;
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 builder.Configuration.AddJsonFile("mvkmodbus.json", optional: false);
-builder.Services.AddMvkModbus(builder.Configuration);
-builder.Services.AddMvk01Devices();
+builder.Services.AddMvk01(builder.Configuration);
 
 WebApplication app = builder.Build();
 
@@ -2382,17 +2337,16 @@ app.MapGet("/api/mvk/{id}/stream", (
     CancellationToken cancellationToken) =>
 {
     IMvk01Device device = factory.GetDevice(id);
-    Mvk01Watcher watcher = new(device, TimeSpan.FromMilliseconds(500));
-
-    Mvk01PollItem item = new(
-        Mvk01MeasurementNumber.Rms10To1000Acceleration,
-        channel: 1);
 
     return Results.Stream(async stream =>
     {
         await using StreamWriter writer = new(stream);
 
-        await foreach (Mvk01Sample sample in watcher.WatchAsync(item, cancellationToken))
+        await foreach (Mvk01Sample sample in device.WatchAsync(
+            Mvk01MeasurementNumber.Rms10To1000Acceleration,
+            channel: 1,
+            interval: TimeSpan.FromMilliseconds(500),
+            cancellationToken))
         {
             string json = JsonSerializer.Serialize(new
             {

@@ -34,6 +34,25 @@ namespace Mvk.MVK01.Tests.DependencyInjection
         }
 
         [Fact]
+        public void AddMvk01_RegistersPoolAndTypedFactory()
+        {
+            ServiceCollection services = new();
+            services.AddLogging();
+            services.AddMvk01(options =>
+            {
+                options.Devices = [new MvkDeviceOptions { Id = "mvk-1", Host = "10.20.0.211" }];
+            });
+
+            using ServiceProvider provider = services.BuildServiceProvider();
+
+            IMvk01DeviceFactory factory = provider.GetRequiredService<IMvk01DeviceFactory>();
+            Assert.Single(factory.Devices);
+
+            MvkModbusOptions options = provider.GetRequiredService<IOptions<MvkModbusOptions>>().Value;
+            Assert.True(options.Defaults.RequireEvenAddressAndQuantity);
+        }
+
+        [Fact]
         public void AddMvk01Devices_ExplicitWritePermission_IsPreserved()
         {
             ServiceCollection services = new();

@@ -59,6 +59,36 @@ namespace Mvk.MVK01.Polling
         public TimeSpan Interval { get; }
 
         /// <summary>
+        /// Наблюдает за одним параметром и каналом.
+        /// </summary>
+        /// <param name="number">Номер параметра.</param>
+        /// <param name="channel">Номер канала (1–8); по умолчанию 1.</param>
+        /// <param name="cancellationToken">Токен отмены.</param>
+        public IAsyncEnumerable<Mvk01Sample> WatchAsync(
+            Mvk01MeasurementNumber number,
+            int channel = 1,
+            CancellationToken cancellationToken = default)
+        {
+            return WatchAsync(new Mvk01PollItem(number, channel), cancellationToken);
+        }
+
+        /// <summary>
+        /// Наблюдает за одним параметром и каналом по числовому номеру.
+        /// </summary>
+        /// <param name="number">Номер параметра (1–184).</param>
+        /// <param name="channel">Номер канала (1–8); по умолчанию 1.</param>
+        /// <param name="cancellationToken">Токен отмены.</param>
+        public IAsyncEnumerable<Mvk01Sample> WatchAsync(
+            int number,
+            int channel = 1,
+            CancellationToken cancellationToken = default)
+        {
+            return WatchAsync(
+                new Mvk01PollItem((Mvk01MeasurementNumber)number, channel),
+                cancellationToken);
+        }
+
+        /// <summary>
         /// Наблюдает за одним параметром.
         /// </summary>
         /// <param name="item">Наблюдаемый параметр.</param>

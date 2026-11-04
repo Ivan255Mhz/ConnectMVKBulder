@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Mvk.Modbus;
 using Mvk.Modbus.Configuration;
 using Mvk.Modbus.Pool;
+using Mvk.MVK01.Polling;
 
 namespace Mvk.MVK01
 {
@@ -116,6 +118,116 @@ namespace Mvk.MVK01
         public Task<Mvk01TachoMeasurement> ReadTachoAsync(int tacho, CancellationToken cancellationToken = default)
         {
             return device.ReadTachoAsync(tacho, cancellationToken);
+        }
+
+        /// <summary>Читает значение одного канала параметра.</summary>
+        /// <param name="number">Номер параметра.</param>
+        /// <param name="channel">Номер канала (1–8); по умолчанию 1.</param>
+        /// <param name="cancellationToken">Токен отмены.</param>
+        public Task<float> ReadValueAsync(
+            Mvk01MeasurementNumber number,
+            int channel = 1,
+            CancellationToken cancellationToken = default)
+        {
+            return device.ReadValueAsync(number, channel, cancellationToken);
+        }
+
+        /// <summary>Читает значение одного канала параметра по числовому номеру.</summary>
+        /// <param name="number">Номер параметра (1–184).</param>
+        /// <param name="channel">Номер канала (1–8); по умолчанию 1.</param>
+        /// <param name="cancellationToken">Токен отмены.</param>
+        public Task<float> ReadValueAsync(
+            int number,
+            int channel = 1,
+            CancellationToken cancellationToken = default)
+        {
+            return device.ReadValueAsync(number, channel, cancellationToken);
+        }
+
+        /// <summary>Читает значения параметра по всем 8 каналам.</summary>
+        /// <param name="number">Номер параметра.</param>
+        /// <param name="cancellationToken">Токен отмены.</param>
+        public Task<float[]> ReadValuesAsync(
+            Mvk01MeasurementNumber number,
+            CancellationToken cancellationToken = default)
+        {
+            return device.ReadValuesAsync(number, cancellationToken);
+        }
+
+        /// <summary>Читает значения параметра по всем 8 каналам по числовому номеру.</summary>
+        /// <param name="number">Номер параметра (1–184).</param>
+        /// <param name="cancellationToken">Токен отмены.</param>
+        public Task<float[]> ReadValuesAsync(
+            int number,
+            CancellationToken cancellationToken = default)
+        {
+            return device.ReadValuesAsync(number, cancellationToken);
+        }
+
+        /// <summary>Наблюдает за одним параметром и каналом.</summary>
+        /// <param name="number">Номер параметра.</param>
+        /// <param name="channel">Номер канала (1–8); по умолчанию 1.</param>
+        /// <param name="interval">Интервал опроса; по умолчанию 500 мс.</param>
+        /// <param name="cancellationToken">Токен отмены.</param>
+        public IAsyncEnumerable<Mvk01Sample> WatchAsync(
+            Mvk01MeasurementNumber number,
+            int channel = 1,
+            TimeSpan? interval = null,
+            CancellationToken cancellationToken = default)
+        {
+            return device.WatchAsync(number, channel, interval, cancellationToken);
+        }
+
+        /// <summary>Наблюдает за одним параметром и каналом по числовому номеру.</summary>
+        /// <param name="number">Номер параметра (1–184).</param>
+        /// <param name="channel">Номер канала (1–8); по умолчанию 1.</param>
+        /// <param name="interval">Интервал опроса; по умолчанию 500 мс.</param>
+        /// <param name="cancellationToken">Токен отмены.</param>
+        public IAsyncEnumerable<Mvk01Sample> WatchAsync(
+            int number,
+            int channel = 1,
+            TimeSpan? interval = null,
+            CancellationToken cancellationToken = default)
+        {
+            return device.WatchAsync(number, channel, interval, cancellationToken);
+        }
+
+        /// <summary>Короткая форма наблюдения с токеном отмены.</summary>
+        public IAsyncEnumerable<Mvk01Sample> WatchAsync(
+            Mvk01MeasurementNumber number,
+            int channel,
+            CancellationToken cancellationToken)
+        {
+            return device.WatchAsync(number, channel, cancellationToken);
+        }
+
+        /// <summary>Короткая форма наблюдения по числовому номеру с токеном отмены.</summary>
+        public IAsyncEnumerable<Mvk01Sample> WatchAsync(
+            int number,
+            int channel,
+            CancellationToken cancellationToken)
+        {
+            return device.WatchAsync(number, channel, cancellationToken);
+        }
+
+        /// <summary>Наблюдает за набором параметров.</summary>
+        /// <param name="items">Наблюдаемые параметры.</param>
+        /// <param name="interval">Интервал опроса; по умолчанию 500 мс.</param>
+        /// <param name="cancellationToken">Токен отмены.</param>
+        public IAsyncEnumerable<Mvk01Sample> WatchAsync(
+            IReadOnlyList<Mvk01PollItem> items,
+            TimeSpan? interval = null,
+            CancellationToken cancellationToken = default)
+        {
+            return device.WatchAsync(items, interval, cancellationToken);
+        }
+
+        /// <summary>Короткая форма наблюдения за набором с токеном отмены.</summary>
+        public IAsyncEnumerable<Mvk01Sample> WatchAsync(
+            IReadOnlyList<Mvk01PollItem> items,
+            CancellationToken cancellationToken)
+        {
+            return device.WatchAsync(items, cancellationToken);
         }
 
         /// <summary>Выполняет системную команду с ожиданием статуса.</summary>

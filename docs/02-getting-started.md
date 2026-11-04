@@ -478,8 +478,7 @@ builder.Configuration.AddJsonFile(
     optional: false,
     reloadOnChange: false);
 
-builder.Services.AddMvkModbus(builder.Configuration);   // пул + конфигурация + валидация
-builder.Services.AddMvk01Devices();                     // типизированный слой МВК01
+builder.Services.AddMvk01(builder.Configuration);       // AddMvkModbus + AddMvk01Devices
 builder.Services.AddMvkModbusHostedService();           // лог состава пула при старте
 
 using IHost host = builder.Build();
@@ -498,7 +497,7 @@ await host.StopAsync();
 Что регистрируется:
 
 - `IMvkDevicePool` / `MvkDevicePool` — singleton;
-- `IMvk01DeviceFactory` — singleton (появляется после `AddMvk01Devices()`);
+- `IMvk01DeviceFactory` — singleton (появляется после `AddMvk01`/`AddMvk01Devices()`);
 - `IMvkTransportFactory` — `NModbusTransportFactory` (можно заменить своей
   регистрацией — последняя регистрация побеждает);
 - hosted-сервис `MvkModbusWarmupHostedService` — только при вызове
@@ -506,7 +505,8 @@ await host.StopAsync();
 
 Важные правила:
 
-- порядок вызовов: сначала `AddMvkModbus`, затем `AddMvk01Devices`;
+- `AddMvk01` — это `AddMvkModbus` + `AddMvk01Devices` одним вызовом; при
+  раздельной регистрации сначала `AddMvkModbus`, затем `AddMvk01Devices`;
 - `AddMvk01Devices()` через `PostConfigure` включает обязательную для МВК01
   настройку `RequireEvenAddressAndQuantity = true`; запись конфигурации
   по умолчанию запрещена и включается явно (`Defaults.AllowConfigurationWrite = true`);

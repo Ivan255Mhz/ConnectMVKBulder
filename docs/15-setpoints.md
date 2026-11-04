@@ -223,8 +223,7 @@ await alarms.RunAsync(async (alarm, token) =>
 ## 15.7. DI и ASP.NET Core
 
 ```csharp
-builder.Services.AddMvkModbus(builder.Configuration);
-builder.Services.AddMvk01Devices();
+builder.Services.AddMvk01(builder.Configuration);       // AddMvkModbus + AddMvk01Devices
 builder.Services.AddMvk01Alarms(options =>
 {
     options.SetpointsFile = "mvk-setpoints.json";

@@ -535,8 +535,7 @@ try
     builder.Configuration.AddJsonFile(
         Path.Combine(AppContext.BaseDirectory, "mvkmodbus.json"), optional: false);
 
-    builder.Services.AddMvkModbus(builder.Configuration);
-    builder.Services.AddMvk01Devices();
+    builder.Services.AddMvk01(builder.Configuration);
     builder.Services.AddMvkModbusHostedService();
 
     using IHost host = builder.Build();
