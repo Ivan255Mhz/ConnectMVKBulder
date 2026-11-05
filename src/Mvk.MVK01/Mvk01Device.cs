@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Mvk.Modbus;
 using Mvk.Modbus.Configuration;
 using Mvk.Modbus.Pool;
@@ -33,6 +35,8 @@ namespace Mvk.MVK01
 
         private readonly IMvkDevice device;
         private readonly Encoding textEncoding;
+        private readonly Mvk01SnapshotOptions snapshotOptions;
+        private readonly ILogger<Mvk01Device> logger;
 
         /// <summary>
         /// Создаёт фасад устройства.
@@ -42,10 +46,18 @@ namespace Mvk.MVK01
         /// Кодировка строк устройства (единицы измерения, серийные номера).
         /// По умолчанию <see cref="Mvk01Codec.DefaultTextEncoding"/> — кодовая страница 1251.
         /// </param>
-        public Mvk01Device(IMvkDevice device, Encoding? textEncoding = null)
+        /// <param name="snapshotOptions">Настройки объединённых чтений и согласованности снимков.</param>
+        /// <param name="logger">Логгер (необязателен).</param>
+        public Mvk01Device(
+            IMvkDevice device,
+            Encoding? textEncoding = null,
+            Mvk01SnapshotOptions? snapshotOptions = null,
+            ILogger<Mvk01Device>? logger = null)
         {
             this.device = device ?? throw new ArgumentNullException(nameof(device));
             this.textEncoding = textEncoding ?? Mvk01Codec.DefaultTextEncoding;
+            this.snapshotOptions = snapshotOptions ?? new Mvk01SnapshotOptions();
+            this.logger = logger ?? NullLogger<Mvk01Device>.Instance;
         }
 
         /// <inheritdoc/>
@@ -59,6 +71,11 @@ namespace Mvk.MVK01
 
         /// <inheritdoc/>
         public IMvkDevice Device => device;
+
+        /// <summary>
+        /// Настройки объединённых чтений и согласованности снимков.
+        /// </summary>
+        public Mvk01SnapshotOptions SnapshotOptions => snapshotOptions;
 
         /// <inheritdoc/>
         public Task EnsureConnectedAsync(CancellationToken cancellationToken = default)
@@ -75,26 +92,21 @@ namespace Mvk.MVK01
         /// <inheritdoc/>
         public async Task<Mvk01DeviceInfo> ReadDeviceInfoAsync(CancellationToken cancellationToken = default)
         {
-            ushort[] main = await ReadRegistersAsync(Mvk01RegisterMap.DeviceSerialNumber, 12, cancellationToken)
-                .ConfigureAwait(false);
-            ushort[] md5 = await ReadRegistersAsync(Mvk01RegisterMap.DspMd5, 12, cancellationToken)
-                .ConfigureAwait(false);
-            ushort[] dsp = await ReadRegistersAsync(Mvk01RegisterMap.DspIndicators, 6, cancellationToken)
-                .ConfigureAwait(false);
-
+            ushort[] data = await ReadDeviceInfoRegistersAsync(cancellationToken).ConfigureAwait(false);
             MvkByteOrder order = Settings.ByteOrder;
 
             return new Mvk01DeviceInfo
             {
-                SerialNumber = Mvk01Codec.DecodeText(main.AsSpan(0, 4), 8, textEncoding),
-                FirmwareVersion = Mvk01Codec.DecodeFirmwareVersion(RegisterCodec.ToUInt32(main.AsSpan(4, 2), order)),
-                Errors = Mvk01Codec.DecodeSystemErrors(RegisterCodec.ToUInt32(main.AsSpan(6, 2), order)),
-                Uptime = TimeSpan.FromSeconds(RegisterCodec.ToUInt32(main.AsSpan(8, 2), order)),
-                MemoryCardKilobytes = (int)RegisterCodec.ToUInt32(main.AsSpan(10, 2), order),
-                DspMd5 = Mvk01Codec.FormatMd5(RegisterCodec.ToBytes(md5.AsSpan(0, 8), 16)),
-                Unit1State = Mvk01Codec.DecodeUnitState(RegisterCodec.ToUInt32(md5.AsSpan(8, 2), order)),
-                Unit2State = Mvk01Codec.DecodeUnitState(RegisterCodec.ToUInt32(md5.AsSpan(10, 2), order)),
-                DspIndicators = Mvk01Codec.DecodeDspIndicators(dsp, order)
+                CapturedAt = DateTimeOffset.UtcNow,
+                SerialNumber = Mvk01Codec.DecodeText(data.AsSpan(0, 4), 8, textEncoding),
+                FirmwareVersion = Mvk01Codec.DecodeFirmwareVersion(RegisterCodec.ToUInt32(data.AsSpan(4, 2), order)),
+                Errors = Mvk01Codec.DecodeSystemErrors(RegisterCodec.ToUInt32(data.AsSpan(6, 2), order)),
+                Uptime = TimeSpan.FromSeconds(RegisterCodec.ToUInt32(data.AsSpan(8, 2), order)),
+                MemoryCardKilobytes = (int)RegisterCodec.ToUInt32(data.AsSpan(10, 2), order),
+                DspMd5 = Mvk01Codec.FormatMd5(RegisterCodec.ToBytes(data.AsSpan(12, 8), 16)),
+                Unit1State = Mvk01Codec.DecodeUnitState(RegisterCodec.ToUInt32(data.AsSpan(20, 2), order)),
+                Unit2State = Mvk01Codec.DecodeUnitState(RegisterCodec.ToUInt32(data.AsSpan(22, 2), order)),
+                DspIndicators = Mvk01Codec.DecodeDspIndicators(data.AsSpan(32, 6), order)
             };
         }
 
@@ -124,73 +136,152 @@ namespace Mvk.MVK01
                 Mvk01RegisterMap.EquivalentRegisterCount,
                 cancellationToken).ConfigureAwait(false);
 
-            float[] rmsValues = Mvk01Codec.DecodeFloats(rmsRegisters, Mvk01RegisterMap.RmsSetCount * Mvk01RegisterMap.RmsSetValues, order);
-            List<Mvk01RmsSet> rmsSets = new(Mvk01RegisterMap.RmsSetCount);
-            for (int i = 0; i < Mvk01RegisterMap.RmsSetCount; i++)
-            {
-                rmsSets.Add(new Mvk01RmsSet(
-                    RmsSetNames[i],
-                    rmsValues[i * Mvk01RegisterMap.RmsSetValues],
-                    rmsValues[i * Mvk01RegisterMap.RmsSetValues + 1],
-                    rmsValues[i * Mvk01RegisterMap.RmsSetValues + 2]));
-            }
-
-            return new Mvk01Channel
-            {
-                Channel = channel,
-                SensorVoltage = RegisterCodec.ToSingle(primary.AsSpan(0, 2), order),
-                Spectrum = Mvk01Codec.DecodeFloats(
-                    primary.AsSpan(Mvk01RegisterMap.SpectrumOffset, Mvk01RegisterMap.SpectrumRegisterCount),
-                    Mvk01RegisterMap.SpectrumBands,
-                    order),
-                PeakFactor = RegisterCodec.ToSingle(primary.AsSpan(Mvk01RegisterMap.PeakFactorOffset, 2), order),
-                RmsX25kHzAcceleration = RegisterCodec.ToSingle(primary.AsSpan(Mvk01RegisterMap.RmsX25kHzOffset, 2), order),
-                RmsSets = rmsSets,
-                DcComponent = RegisterCodec.ToSingle(extra.AsSpan(0, 2), order),
-                State = Mvk01Codec.DecodeChannelState(RegisterCodec.ToUInt32(extra.AsSpan(4, 2), order)),
-                EquivalentPeakValues = Mvk01Codec.DecodeFloats(peaks, Mvk01RegisterMap.EquivalentValuesCount, order),
-                EquivalentRangeValues = Mvk01Codec.DecodeFloats(ranges, Mvk01RegisterMap.EquivalentValuesCount, order)
-            };
+            Mvk01Channel snapshot = DecodeChannel(channel, primary, rmsRegisters, extra, peaks, ranges, order);
+            return snapshot with { CapturedAt = DateTimeOffset.UtcNow };
         }
 
         /// <inheritdoc/>
-        public async Task<Mvk01ChannelConfig> ReadChannelConfigAsync(int channel, CancellationToken cancellationToken = default)
+        public async Task<Mvk01Channel> ReadChannelSnapshotAsync(
+            int channel,
+            CancellationToken cancellationToken = default)
         {
             ValidateChannel(channel);
 
-            ushort baseAddress = Mvk01RegisterMap.ChannelConfig(channel);
+            int maxAttempts = Math.Max(1, snapshotOptions.MaxChannelReadAttempts);
+            IReadOnlyList<Mvk01ReadChunk> chunks = Mvk01ReadPlanner.ChannelDataChunks(channel);
             MvkByteOrder order = Settings.ByteOrder;
+            Mvk01Channel? lastSnapshot = null;
 
-            ushort[] head = await ReadRegistersAsync(baseAddress, 6, cancellationToken).ConfigureAwait(false);
-            ushort[] units = await ReadRegistersAsync(
-                (ushort)(baseAddress + Mvk01RegisterMap.ChannelUnitsOffset), 16, cancellationToken).ConfigureAwait(false);
-            ushort[] serial = await ReadRegistersAsync(
-                (ushort)(baseAddress + Mvk01RegisterMap.ChannelSerialOffset), 16, cancellationToken).ConfigureAwait(false);
-            ushort[] filters = await ReadRegistersAsync(
-                (ushort)(baseAddress + Mvk01RegisterMap.ChannelFilterX25kHzOffset), 10, cancellationToken).ConfigureAwait(false);
-            ushort[] voltages = await ReadRegistersAsync(
-                (ushort)(baseAddress + Mvk01RegisterMap.ChannelMaxDcVoltageOffset), 4, cancellationToken).ConfigureAwait(false);
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                Mvk01Channel snapshot;
+
+                try
+                {
+                    ushort[] first = await ReadRegistersAsync(
+                        chunks[0].Address, chunks[0].Quantity, cancellationToken).ConfigureAwait(false);
+                    ushort[] second = await ReadRegistersAsync(
+                        chunks[1].Address, chunks[1].Quantity, cancellationToken).ConfigureAwait(false);
+                    ushort[] third = await ReadRegistersAsync(
+                        chunks[2].Address, chunks[2].Quantity, cancellationToken).ConfigureAwait(false);
+
+                    bool consistent = IsChannelSnapshotConsistent(first, second, third, order);
+
+                    snapshot = DecodeChannel(
+                        channel,
+                        first.AsSpan(0, Mvk01ReadPlanner.ChannelFirstChunkQuantity),
+                        second.AsSpan(0, Mvk01RegisterMap.RmsSetRegisterCount),
+                        second.AsSpan(
+                            Mvk01RegisterMap.DcComponentOffset - Mvk01ReadPlanner.ChannelSecondChunkOffset,
+                            6),
+                        second.AsSpan(
+                            Mvk01RegisterMap.EquivalentPeakOffset - Mvk01ReadPlanner.ChannelSecondChunkOffset,
+                            Mvk01RegisterMap.EquivalentRegisterCount),
+                        third.AsSpan(
+                            Mvk01RegisterMap.EquivalentRangeOffset - Mvk01ReadPlanner.ChannelThirdChunkOffset,
+                            Mvk01RegisterMap.EquivalentRegisterCount),
+                        order) with
+                    {
+                        CapturedAt = DateTimeOffset.UtcNow,
+                        IsConsistent = consistent,
+                        ReadAttempts = attempt
+                    };
+                }
+                catch (MvkModbusException ex) when (
+                    snapshotOptions.FallbackToSplitReads && IsIllegalDataAddress(ex))
+                {
+                    Mvk01Channel fallback = await ReadChannelAsync(channel, cancellationToken).ConfigureAwait(false);
+
+                    logger.LogDebug(
+                        "МВК '{DeviceId}': канал {Channel} прочитан раздельными запросами после ошибки 0x02.",
+                        Id,
+                        channel);
+
+                    return fallback with { IsConsistent = null, ReadAttempts = 1 };
+                }
+
+                if (snapshotOptions.Consistency == Mvk01SnapshotConsistencyMode.Fast)
+                {
+                    return snapshot with { IsConsistent = null };
+                }
+
+                if (snapshot.IsConsistent == true)
+                {
+                    return snapshot;
+                }
+
+                lastSnapshot = snapshot;
+
+                if (attempt < maxAttempts)
+                {
+                    logger.LogDebug(
+                        "МВК '{DeviceId}': канал {Channel} прочитан несогласованно (попытка {Attempt}), повтор.",
+                        Id,
+                        channel,
+                        attempt);
+                }
+            }
+
+            if (snapshotOptions.ThrowOnInconsistentSnapshot)
+            {
+                throw new MvkModbusException(
+                    $"Не удалось получить согласованный снимок канала {channel} устройства '{Id}' "
+                    + $"за {maxAttempts} попыток.",
+                    MvkErrorKind.Validation,
+                    Id);
+            }
+
+            logger.LogWarning(
+                "МВК '{DeviceId}': снимок канала {Channel} остался несогласованным после {Attempts} попыток.",
+                Id,
+                channel,
+                maxAttempts);
+
+            return lastSnapshot!;
+        }
+
+        /// <inheritdoc/>
+        public async Task<Mvk01ChannelConfig> ReadChannelConfigAsync(
+            int channel,
+            CancellationToken cancellationToken = default)
+        {
+            ValidateChannel(channel);
+
+            ushort[] data = await ReadChannelConfigRegistersAsync(channel, cancellationToken).ConfigureAwait(false);
+            MvkByteOrder order = Settings.ByteOrder;
 
             return new Mvk01ChannelConfig
             {
+                CapturedAt = DateTimeOffset.UtcNow,
                 Channel = channel,
-                ChannelType = (int)RegisterCodec.ToUInt32(head.AsSpan(0, 2), order),
-                SensorFactor = RegisterCodec.ToSingle(head.AsSpan(2, 2), order),
-                OverloadThreshold = RegisterCodec.ToSingle(head.AsSpan(4, 2), order),
-                Units = Mvk01Codec.DecodeTextSwapped(units, 32, textEncoding),
-                SerialNumber = Mvk01Codec.DecodeTextSwapped(serial, 32, textEncoding),
-                FilterX25kHz = (Mvk01FilterX25kHz)RegisterCodec.ToUInt32(filters.AsSpan(0, 2), order),
-                Filter1LowBand = (int)RegisterCodec.ToUInt32(filters.AsSpan(2, 2), order),
-                Filter1HighBand = (int)RegisterCodec.ToUInt32(filters.AsSpan(4, 2), order),
-                Filter2LowBand = (int)RegisterCodec.ToUInt32(filters.AsSpan(6, 2), order),
-                Filter2HighBand = (int)RegisterCodec.ToUInt32(filters.AsSpan(8, 2), order),
-                MaxDcVoltage = RegisterCodec.ToSingle(voltages.AsSpan(0, 2), order),
-                MinDcVoltage = RegisterCodec.ToSingle(voltages.AsSpan(2, 2), order)
+                ChannelType = (int)RegisterCodec.ToUInt32(data.AsSpan(0, 2), order),
+                SensorFactor = RegisterCodec.ToSingle(data.AsSpan(2, 2), order),
+                OverloadThreshold = RegisterCodec.ToSingle(data.AsSpan(4, 2), order),
+                Units = Mvk01Codec.DecodeTextSwapped(
+                    data.AsSpan(Mvk01RegisterMap.ChannelUnitsOffset, 16), 32, textEncoding),
+                SerialNumber = Mvk01Codec.DecodeTextSwapped(
+                    data.AsSpan(Mvk01RegisterMap.ChannelSerialOffset, 16), 32, textEncoding),
+                FilterX25kHz = (Mvk01FilterX25kHz)RegisterCodec.ToUInt32(
+                    data.AsSpan(Mvk01RegisterMap.ChannelFilterX25kHzOffset, 2), order),
+                Filter1LowBand = (int)RegisterCodec.ToUInt32(
+                    data.AsSpan(Mvk01RegisterMap.ChannelFilter1LowOffset, 2), order),
+                Filter1HighBand = (int)RegisterCodec.ToUInt32(
+                    data.AsSpan(Mvk01RegisterMap.ChannelFilter1HighOffset, 2), order),
+                Filter2LowBand = (int)RegisterCodec.ToUInt32(
+                    data.AsSpan(Mvk01RegisterMap.ChannelFilter2LowOffset, 2), order),
+                Filter2HighBand = (int)RegisterCodec.ToUInt32(
+                    data.AsSpan(Mvk01RegisterMap.ChannelFilter2HighOffset, 2), order),
+                MaxDcVoltage = RegisterCodec.ToSingle(
+                    data.AsSpan(Mvk01RegisterMap.ChannelMaxDcVoltageOffset, 2), order),
+                MinDcVoltage = RegisterCodec.ToSingle(
+                    data.AsSpan(Mvk01RegisterMap.ChannelMinDcVoltageOffset, 2), order)
             };
         }
 
         /// <inheritdoc/>
-        public async Task<Mvk01TachoMeasurement> ReadTachoAsync(int tacho, CancellationToken cancellationToken = default)
+        public async Task<Mvk01TachoMeasurement> ReadTachoAsync(
+            int tacho,
+            CancellationToken cancellationToken = default)
         {
             if (tacho < 1 || tacho > Mvk01RegisterMap.MaxTachoChannels)
             {
@@ -208,6 +299,7 @@ namespace Mvk.MVK01
 
             return new Mvk01TachoMeasurement
             {
+                CapturedAt = DateTimeOffset.UtcNow,
                 Tacho = tacho,
                 FrequencyHz = RegisterCodec.ToSingle(data.AsSpan(Mvk01RegisterMap.TachoFrequencyOffset, 2), order),
                 AverageIncrementHz = RegisterCodec.ToSingle(data.AsSpan(Mvk01RegisterMap.TachoAverageIncrementOffset, 2), order),
@@ -361,6 +453,166 @@ namespace Mvk.MVK01
         private Task<ushort[]> ReadRegistersAsync(ushort address, ushort quantity, CancellationToken cancellationToken)
         {
             return device.ReadHoldingRegistersAsync(address, quantity, cancellationToken);
+        }
+
+        private async Task<ushort[]> ReadDeviceInfoRegistersAsync(CancellationToken cancellationToken)
+        {
+            Mvk01ReadChunk chunk = Mvk01ReadPlanner.DeviceInfoChunk();
+
+            try
+            {
+                return await ReadRegistersAsync(chunk.Address, chunk.Quantity, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (MvkModbusException ex) when (
+                snapshotOptions.FallbackToSplitReads && IsIllegalDataAddress(ex))
+            {
+                logger.LogDebug(
+                    "МВК '{DeviceId}': сведения об устройстве прочитаны раздельными запросами после ошибки 0x02.",
+                    Id);
+
+                ushort[] buffer = new ushort[chunk.Quantity];
+
+                ushort[] main = await ReadRegistersAsync(
+                    Mvk01RegisterMap.DeviceSerialNumber, 12, cancellationToken).ConfigureAwait(false);
+                ushort[] md5 = await ReadRegistersAsync(
+                    Mvk01RegisterMap.DspMd5, 12, cancellationToken).ConfigureAwait(false);
+                ushort[] dsp = await ReadRegistersAsync(
+                    Mvk01RegisterMap.DspIndicators, 6, cancellationToken).ConfigureAwait(false);
+
+                main.CopyTo(buffer, 0);
+                md5.CopyTo(buffer, 12);
+                dsp.CopyTo(buffer, 32);
+
+                return buffer;
+            }
+        }
+
+        private async Task<ushort[]> ReadChannelConfigRegistersAsync(
+            int channel,
+            CancellationToken cancellationToken)
+        {
+            Mvk01ReadChunk chunk = Mvk01ReadPlanner.ChannelConfigChunk(channel);
+
+            try
+            {
+                return await ReadRegistersAsync(chunk.Address, chunk.Quantity, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (MvkModbusException ex) when (
+                snapshotOptions.FallbackToSplitReads && IsIllegalDataAddress(ex))
+            {
+                logger.LogDebug(
+                    "МВК '{DeviceId}': конфигурация канала {Channel} прочитана раздельными запросами после ошибки 0x02.",
+                    Id,
+                    channel);
+
+                ushort baseAddress = chunk.Address;
+                ushort[] buffer = new ushort[chunk.Quantity];
+
+                ushort[] head = await ReadRegistersAsync(
+                    baseAddress, 6, cancellationToken).ConfigureAwait(false);
+                ushort[] units = await ReadRegistersAsync(
+                    (ushort)(baseAddress + Mvk01RegisterMap.ChannelUnitsOffset),
+                    16,
+                    cancellationToken).ConfigureAwait(false);
+                ushort[] serial = await ReadRegistersAsync(
+                    (ushort)(baseAddress + Mvk01RegisterMap.ChannelSerialOffset),
+                    16,
+                    cancellationToken).ConfigureAwait(false);
+                ushort[] filters = await ReadRegistersAsync(
+                    (ushort)(baseAddress + Mvk01RegisterMap.ChannelFilterX25kHzOffset),
+                    10,
+                    cancellationToken).ConfigureAwait(false);
+                ushort[] voltages = await ReadRegistersAsync(
+                    (ushort)(baseAddress + Mvk01RegisterMap.ChannelMaxDcVoltageOffset),
+                    4,
+                    cancellationToken).ConfigureAwait(false);
+
+                head.CopyTo(buffer, 0);
+                units.CopyTo(buffer, Mvk01RegisterMap.ChannelUnitsOffset);
+                serial.CopyTo(buffer, Mvk01RegisterMap.ChannelSerialOffset);
+                filters.CopyTo(buffer, Mvk01RegisterMap.ChannelFilterX25kHzOffset);
+                voltages.CopyTo(buffer, Mvk01RegisterMap.ChannelMaxDcVoltageOffset);
+
+                return buffer;
+            }
+        }
+
+        private static Mvk01Channel DecodeChannel(
+            int channel,
+            ReadOnlySpan<ushort> primary,
+            ReadOnlySpan<ushort> rmsRegisters,
+            ReadOnlySpan<ushort> extra,
+            ReadOnlySpan<ushort> peaks,
+            ReadOnlySpan<ushort> ranges,
+            MvkByteOrder order)
+        {
+            float[] rmsValues = Mvk01Codec.DecodeFloats(
+                rmsRegisters,
+                Mvk01RegisterMap.RmsSetCount * Mvk01RegisterMap.RmsSetValues,
+                order);
+            List<Mvk01RmsSet> rmsSets = new(Mvk01RegisterMap.RmsSetCount);
+
+            for (int i = 0; i < Mvk01RegisterMap.RmsSetCount; i++)
+            {
+                rmsSets.Add(new Mvk01RmsSet(
+                    RmsSetNames[i],
+                    rmsValues[i * Mvk01RegisterMap.RmsSetValues],
+                    rmsValues[i * Mvk01RegisterMap.RmsSetValues + 1],
+                    rmsValues[i * Mvk01RegisterMap.RmsSetValues + 2]));
+            }
+
+            return new Mvk01Channel
+            {
+                Channel = channel,
+                SensorVoltage = RegisterCodec.ToSingle(primary.Slice(0, 2), order),
+                Spectrum = Mvk01Codec.DecodeFloats(
+                    primary.Slice(Mvk01RegisterMap.SpectrumOffset, Mvk01RegisterMap.SpectrumRegisterCount),
+                    Mvk01RegisterMap.SpectrumBands,
+                    order),
+                PeakFactor = RegisterCodec.ToSingle(primary.Slice(Mvk01RegisterMap.PeakFactorOffset, 2), order),
+                RmsX25kHzAcceleration = RegisterCodec.ToSingle(primary.Slice(Mvk01RegisterMap.RmsX25kHzOffset, 2), order),
+                RmsSets = rmsSets,
+                DcComponent = RegisterCodec.ToSingle(extra.Slice(0, 2), order),
+                State = Mvk01Codec.DecodeChannelState(RegisterCodec.ToUInt32(extra.Slice(4, 2), order)),
+                EquivalentPeakValues = Mvk01Codec.DecodeFloats(
+                    peaks, Mvk01RegisterMap.EquivalentValuesCount, order),
+                EquivalentRangeValues = Mvk01Codec.DecodeFloats(
+                    ranges, Mvk01RegisterMap.EquivalentValuesCount, order)
+            };
+        }
+
+        private static bool IsChannelSnapshotConsistent(
+            ReadOnlySpan<ushort> first,
+            ReadOnlySpan<ushort> second,
+            ReadOnlySpan<ushort> third,
+            MvkByteOrder order)
+        {
+            uint sensorVoltage = RegisterCodec.ToUInt32(first.Slice(0, 2), order);
+            uint sensorVoltageCopy = RegisterCodec.ToUInt32(
+                second.Slice(
+                    Mvk01RegisterMap.SensorVoltageCopyOffset - Mvk01ReadPlanner.ChannelSecondChunkOffset,
+                    2),
+                order);
+            uint channelState = RegisterCodec.ToUInt32(
+                second.Slice(
+                    Mvk01RegisterMap.ChannelStateOffset - Mvk01ReadPlanner.ChannelSecondChunkOffset,
+                    2),
+                order);
+            uint channelStateCopy = RegisterCodec.ToUInt32(
+                third.Slice(
+                    Mvk01RegisterMap.ChannelStateCopyOffset - Mvk01ReadPlanner.ChannelThirdChunkOffset,
+                    2),
+                order);
+
+            return sensorVoltage == sensorVoltageCopy && channelState == channelStateCopy;
+        }
+
+        private static bool IsIllegalDataAddress(MvkModbusException exception)
+        {
+            return exception.ErrorKind == MvkErrorKind.DeviceError
+                && exception.ModbusExceptionCode == 0x02;
         }
 
         private static void ValidateChannel(int channel)

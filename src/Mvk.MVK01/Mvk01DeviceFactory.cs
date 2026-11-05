@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using Microsoft.Extensions.Logging;
 using Mvk.Modbus.Pool;
 
 namespace Mvk.MVK01
@@ -14,6 +15,8 @@ namespace Mvk.MVK01
     {
         private readonly IMvkDevicePool pool;
         private readonly Encoding textEncoding;
+        private readonly Mvk01SnapshotOptions snapshotOptions;
+        private readonly ILoggerFactory? loggerFactory;
         private readonly ConcurrentDictionary<string, Mvk01Device> devices =
             new(StringComparer.OrdinalIgnoreCase);
 
@@ -25,10 +28,18 @@ namespace Mvk.MVK01
         /// Кодировка строк устройства; по умолчанию <see cref="Mvk01Codec.DefaultTextEncoding"/> —
         /// кодовая страница 1251.
         /// </param>
-        public Mvk01DeviceFactory(IMvkDevicePool pool, Encoding? textEncoding = null)
+        /// <param name="snapshotOptions">Настройки объединённых чтений и согласованности снимков.</param>
+        /// <param name="loggerFactory">Фабрика логгеров (необязательна).</param>
+        public Mvk01DeviceFactory(
+            IMvkDevicePool pool,
+            Encoding? textEncoding = null,
+            Mvk01SnapshotOptions? snapshotOptions = null,
+            ILoggerFactory? loggerFactory = null)
         {
             this.pool = pool ?? throw new ArgumentNullException(nameof(pool));
             this.textEncoding = textEncoding ?? Mvk01Codec.DefaultTextEncoding;
+            this.snapshotOptions = snapshotOptions ?? new Mvk01SnapshotOptions();
+            this.loggerFactory = loggerFactory;
         }
 
         /// <inheritdoc/>
@@ -40,7 +51,13 @@ namespace Mvk.MVK01
             }
 
             IMvkDevice device = pool.GetDevice(id);
-            Mvk01Device facade = devices.GetOrAdd(device.Settings.Id, _ => new Mvk01Device(device, textEncoding));
+            Mvk01Device facade = devices.GetOrAdd(
+                device.Settings.Id,
+                _ => new Mvk01Device(
+                    device,
+                    textEncoding,
+                    snapshotOptions,
+                    loggerFactory?.CreateLogger<Mvk01Device>()));
             return facade;
         }
 

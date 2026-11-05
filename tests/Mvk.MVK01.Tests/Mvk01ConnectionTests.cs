@@ -101,6 +101,37 @@ namespace Mvk.MVK01.Tests
         }
 
         [Fact]
+        public async Task ReadChannelSnapshotAsync_ReturnsConsistentSnapshot()
+        {
+            await using MvkTestServer server = MvkTestServer.Start();
+            ushort baseAddress = Mvk01RegisterMap.ChannelData(1);
+
+            server.SetHoldingRegisters(
+                baseAddress,
+                RegisterCodec.FromSingle(7.5f, MvkByteOrder.BigEndian));
+            server.SetHoldingRegisters(
+                (ushort)(baseAddress + Mvk01RegisterMap.SensorVoltageCopyOffset),
+                RegisterCodec.FromSingle(7.5f, MvkByteOrder.BigEndian));
+            server.SetHoldingRegisters(
+                (ushort)(baseAddress + Mvk01RegisterMap.ChannelStateOffset),
+                RegisterCodec.FromUInt32(1, MvkByteOrder.BigEndian));
+            server.SetHoldingRegisters(
+                (ushort)(baseAddress + Mvk01RegisterMap.ChannelStateCopyOffset),
+                RegisterCodec.FromUInt32(1, MvkByteOrder.BigEndian));
+
+            await using Mvk01Connection connection = await Mvk01Connection.ConnectAsync(
+                "127.0.0.1",
+                server.Port);
+
+            Mvk01Channel snapshot = await connection.ReadChannelSnapshotAsync(1);
+
+            Assert.True(snapshot.IsConsistent);
+            Assert.Equal(1, snapshot.ReadAttempts);
+            Assert.Equal(7.5f, snapshot.SensorVoltage, 4);
+            Assert.True(snapshot.State.Overload);
+        }
+
+        [Fact]
         public async Task WatchAsync_EmitsSamples()
         {
             await using MvkTestServer server = MvkTestServer.Start();

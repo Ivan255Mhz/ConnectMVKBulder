@@ -241,6 +241,9 @@ namespace Mvk.MVK01
         /// <summary>Постоянная составляющая в канале, м/с2 (смещение).</summary>
         public const ushort DcComponentOffset = 0x009A;
 
+        /// <summary>Копия напряжения на датчике (параметр 79), смещение.</summary>
+        public const ushort SensorVoltageCopyOffset = 0x009C;
+
         /// <summary>Индикаторы состояния канала (uint32, раздел 5.1.4), смещение.</summary>
         public const ushort ChannelStateOffset = 0x009E;
 

@@ -70,7 +70,9 @@ namespace Mvk.MVK01.Tests
             SeedFloats(server, baseAddress + Mvk01RegisterMap.RmsSetOffset, rms);
 
             SeedFloat(server, baseAddress + Mvk01RegisterMap.DcComponentOffset, 0.125f);
+            SeedFloat(server, baseAddress + Mvk01RegisterMap.SensorVoltageCopyOffset, 7.82f);
             SeedUInt32(server, baseAddress + Mvk01RegisterMap.ChannelStateOffset, 1u | (1u << 10));
+            SeedUInt32(server, baseAddress + Mvk01RegisterMap.ChannelStateCopyOffset, 1u | (1u << 10));
 
             float[] peaks = Enumerable.Range(0, Mvk01RegisterMap.EquivalentValuesCount)
                 .Select(index => 100f + index)
@@ -107,6 +109,20 @@ namespace Mvk.MVK01.Tests
             Assert.Equal(123f, channel.EquivalentPeakValues[^1]);
             Assert.Equal(200f, channel.EquivalentRangeValues[0]);
             Assert.Equal(223f, channel.EquivalentRangeValues[^1]);
+            Assert.Null(channel.IsConsistent);
+            Assert.NotEqual(default, channel.CapturedAt);
+
+            Mvk01Channel snapshot = await device.ReadChannelSnapshotAsync(1);
+
+            Assert.True(snapshot.IsConsistent);
+            Assert.Equal(1, snapshot.ReadAttempts);
+            Assert.NotEqual(default, snapshot.CapturedAt);
+            Assert.Equal(channel.SensorVoltage, snapshot.SensorVoltage);
+            Assert.Equal(channel.Spectrum, snapshot.Spectrum);
+            Assert.Equal(channel.RmsSets, snapshot.RmsSets);
+            Assert.Equal(channel.State, snapshot.State);
+            Assert.Equal(channel.EquivalentPeakValues, snapshot.EquivalentPeakValues);
+            Assert.Equal(channel.EquivalentRangeValues, snapshot.EquivalentRangeValues);
         }
 
         [Fact]

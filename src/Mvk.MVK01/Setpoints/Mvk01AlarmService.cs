@@ -373,7 +373,8 @@ namespace Mvk.MVK01.Setpoints
             [EnumeratorCancellation] CancellationToken cancellationToken)
         {
             IMvk01Device device = factory.GetDevice(deviceId);
-            Mvk01Watcher watcher = new(device, options.PollInterval);
+            Mvk01SnapshotOptions? snapshotOptions = (device as Mvk01Device)?.SnapshotOptions;
+            Mvk01Watcher watcher = new(device, options.PollInterval, snapshotOptions);
 
             await foreach (Mvk01Sample sample in watcher
                 .WatchAsync(items, cancellationToken)

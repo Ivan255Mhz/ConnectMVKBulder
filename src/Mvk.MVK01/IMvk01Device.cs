@@ -59,6 +59,18 @@ namespace Mvk.MVK01
         Task<Mvk01Channel> ReadChannelAsync(int channel, CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// Читает снимок канала объединёнными запросами (обычно три вместо пяти)
+        /// и, в режиме <see cref="Mvk01SnapshotConsistencyMode.Checked"/>, проверяет
+        /// согласованность по копиям регистров.
+        /// </summary>
+        /// <param name="channel">Номер канала (1–8).</param>
+        /// <param name="cancellationToken">Токен отмены.</param>
+        Task<Mvk01Channel> ReadChannelSnapshotAsync(int channel, CancellationToken cancellationToken = default)
+        {
+            return ReadChannelAsync(channel, cancellationToken);
+        }
+
+        /// <summary>
         /// Читает конфигурацию измерительного канала.
         /// </summary>
         /// <param name="channel">Номер канала (1–8).</param>

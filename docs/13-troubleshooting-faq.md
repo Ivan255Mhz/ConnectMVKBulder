@@ -656,7 +656,8 @@ Console.WriteLine($"Канал 1: {rms[0]:F4}, канал 8: {rms[7]:F4} м/с2"
 Полный снимок канала или только спектр:
 
 ```csharp
-Mvk01Channel channel = await device.ReadChannelAsync(1, cts.Token);
+Mvk01Channel channel = await device.ReadChannelSnapshotAsync(1, cts.Token);
+// 3 запроса; channel.IsConsistent == true, если копии регистров совпали
 
 for (int band = 1; band <= Mvk01SpectrumBands.Count; band++)
 {

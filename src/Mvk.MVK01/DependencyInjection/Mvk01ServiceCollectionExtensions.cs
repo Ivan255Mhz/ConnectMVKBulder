@@ -2,6 +2,7 @@ using System;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Mvk.Modbus.Configuration;
 using Mvk.Modbus.DependencyInjection;
@@ -21,16 +22,18 @@ namespace Mvk.MVK01.DependencyInjection
         /// <param name="services">Коллекция служб.</param>
         /// <param name="configuration">Конфигурация с секцией <c>MvkModbus</c>.</param>
         /// <param name="sectionName">Имя секции конфигурации.</param>
+        /// <param name="configureSnapshots">Настройка объединённых чтений и согласованности снимков.</param>
         public static IServiceCollection AddMvk01(
             this IServiceCollection services,
             IConfiguration configuration,
-            string sectionName = MvkModbusServiceCollectionExtensions.DefaultSectionName)
+            string sectionName = MvkModbusServiceCollectionExtensions.DefaultSectionName,
+            Action<Mvk01SnapshotOptions>? configureSnapshots = null)
         {
             ArgumentNullException.ThrowIfNull(services);
             ArgumentNullException.ThrowIfNull(configuration);
 
             services.AddMvkModbus(configuration, sectionName);
-            services.AddMvk01Devices();
+            services.AddMvk01Devices(configureSnapshots);
             return services;
         }
 
@@ -40,15 +43,17 @@ namespace Mvk.MVK01.DependencyInjection
         /// </summary>
         /// <param name="services">Коллекция служб.</param>
         /// <param name="configure">Настройка конфигурации.</param>
+        /// <param name="configureSnapshots">Настройка объединённых чтений и согласованности снимков.</param>
         public static IServiceCollection AddMvk01(
             this IServiceCollection services,
-            Action<MvkModbusOptions> configure)
+            Action<MvkModbusOptions> configure,
+            Action<Mvk01SnapshotOptions>? configureSnapshots = null)
         {
             ArgumentNullException.ThrowIfNull(services);
             ArgumentNullException.ThrowIfNull(configure);
 
             services.AddMvkModbus(configure);
-            services.AddMvk01Devices();
+            services.AddMvk01Devices(configureSnapshots);
             return services;
         }
 
@@ -61,7 +66,10 @@ namespace Mvk.MVK01.DependencyInjection
         /// Вызывать после <see cref="MvkModbusServiceCollectionExtensions.AddMvkModbus(IServiceCollection, Action{MvkModbusOptions})"/>.
         /// </summary>
         /// <param name="services">Коллекция служб.</param>
-        public static IServiceCollection AddMvk01Devices(this IServiceCollection services)
+        /// <param name="configureSnapshots">Настройка объединённых чтений и согласованности снимков.</param>
+        public static IServiceCollection AddMvk01Devices(
+            this IServiceCollection services,
+            Action<Mvk01SnapshotOptions>? configureSnapshots = null)
         {
             ArgumentNullException.ThrowIfNull(services);
 
@@ -70,8 +78,20 @@ namespace Mvk.MVK01.DependencyInjection
                 options.Defaults.RequireEvenAddressAndQuantity = true;
             });
 
+            services.AddOptions<Mvk01SnapshotOptions>();
+            if (configureSnapshots is not null)
+            {
+                services.Configure(configureSnapshots);
+            }
+
+            services.TryAddSingleton(provider =>
+                provider.GetRequiredService<IOptions<Mvk01SnapshotOptions>>().Value);
+
             services.TryAddSingleton<IMvk01DeviceFactory>(provider =>
-                new Mvk01DeviceFactory(provider.GetRequiredService<IMvkDevicePool>()));
+                new Mvk01DeviceFactory(
+                    provider.GetRequiredService<IMvkDevicePool>(),
+                    snapshotOptions: provider.GetRequiredService<Mvk01SnapshotOptions>(),
+                    loggerFactory: provider.GetService<ILoggerFactory>()));
 
             return services;
         }

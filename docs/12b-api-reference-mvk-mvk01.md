@@ -175,6 +175,7 @@ ushort t2 = Mvk01RegisterMap.TachoConfig(2);     // 0x0A00
 | `public const int RmsSetValues = 3` | Число значений в наборе СКЗ (ускорение, скорость, перемещение) |
 | `public const ushort RmsSetRegisterCount = 48` | Число регистров всех наборов СКЗ |
 | `public const ushort DcComponentOffset = 0x009A` | Постоянная составляющая в канале, м/с2 (смещение) |
+| `public const ushort SensorVoltageCopyOffset = 0x009C` | Копия напряжения на датчике (параметр 79), смещение |
 | `public const ushort ChannelStateOffset = 0x009E` | Индикаторы состояния канала (uint32, раздел 5.1.4), смещение |
 | `public const ushort EquivalentPeakOffset = 0x00A0` | Эквивалентные пиковые значения, 24 значения (смещение) |
 | `public const int EquivalentValuesCount = 24` | Число эквивалентных значений (пиковых и размаха) |
@@ -853,6 +854,7 @@ Console.WriteLine($"{set.Name}: {set.Acceleration:F3} м/с2");
 
 | Сигнатура | Описание |
 |---|---|
+| `public DateTimeOffset CapturedAt { get; init; }` | Время формирования снимка (UTC) |
 | `public required string SerialNumber { get; init; }` | Серийный номер устройства |
 | `public required Mvk01FirmwareVersion FirmwareVersion { get; init; }` | Версия внутреннего ПО |
 | `public required Mvk01SystemErrors Errors { get; init; }` | Индикатор системных ошибок |
@@ -882,6 +884,9 @@ if (!info.Errors.IsClean)
 | Сигнатура | Описание |
 |---|---|
 | `public required int Channel { get; init; }` | Номер канала (1–8) |
+| `public DateTimeOffset CapturedAt { get; init; }` | Время формирования снимка (UTC) |
+| `public bool? IsConsistent { get; init; }` | `true`/`false` — результат проверки копий; `null` — проверка не выполнялась |
+| `public int ReadAttempts { get; init; }` | Число попыток чтения снимка |
 | `public required float SensorVoltage { get; init; }` | Напряжение на датчике, В |
 | `public required float[] Spectrum { get; init; }` | Дольоктавный спектр, 43 полосы (единицы по типу спектра устройства) |
 | `public required float PeakFactor { get; init; }` | Пик-фактор виброускорения X…25 кГц |
@@ -907,11 +912,12 @@ if (!info.Errors.IsClean)
 > иначе — `EquivalentPeakStart = 81` (81–104) и `EquivalentRangeStart = 123` (123–136).
 
 ```csharp
-Mvk01Channel channel = await device.ReadChannelAsync(1, ct);
+Mvk01Channel channel = await device.ReadChannelSnapshotAsync(1, ct);
 
 Console.WriteLine($"Напряжение: {channel.SensorVoltage:F4} В");
 Console.WriteLine($"СКЗ X…25 кГц: {channel.RmsX25kHzAcceleration:F3} м/с2");
 Console.WriteLine($"10…1000 Гц: {channel.RmsSets[2].Acceleration:F3} м/с2");
+Console.WriteLine($"Согласован: {channel.IsConsistent}, попыток: {channel.ReadAttempts}");
 
 float band20 = channel.GetSpectrumBand(20);             // полоса 50 Гц
 float band43 = channel.GetSpectrumBand(43);             // полоса 10 кГц
@@ -928,6 +934,7 @@ if (channel.State.Overload)
 
 | Сигнатура | Описание |
 |---|---|
+| `public DateTimeOffset CapturedAt { get; init; }` | Время формирования снимка (UTC) |
 | `public required int Tacho { get; init; }` | Номер тахометра (1–2) |
 | `public required float FrequencyHz { get; init; }` | Частота вращения, Гц |
 | `public required float AverageIncrementHz { get; init; }` | Среднее приращение частоты вращения на один оборот, Гц |
@@ -954,6 +961,7 @@ if (tacho.SensorError)
 
 | Сигнатура | Описание |
 |---|---|
+| `public DateTimeOffset CapturedAt { get; init; }` | Время формирования снимка (UTC) |
 | `public required int Channel { get; init; }` | Номер канала (1–8) |
 | `public required int ChannelType { get; init; }` | Тип канала (по документации = 0) |
 | `public required float SensorFactor { get; init; }` | Коэффициент преобразования датчика, В/(м/с2) |
@@ -1035,8 +1043,9 @@ public interface IMvk01Device
 | `Task EnsureConnectedAsync(CancellationToken cancellationToken = default)` | Устанавливает соединение явно |
 | `Task DisconnectAsync(CancellationToken cancellationToken = default)` | Закрывает соединение |
 | `Task<Mvk01DeviceInfo> ReadDeviceInfoAsync(CancellationToken cancellationToken = default)` | Читает общие сведения: серийный номер, версию ПО, ошибки, наработку |
-| `Task<Mvk01Channel> ReadChannelAsync(int channel, CancellationToken cancellationToken = default)` | Читает полный снимок канала АЦП: напряжение, спектр (43 полосы), СКЗ, пик-фактор, эквивалентные значения и состояния; `channel` — 1–8 |
-| `Task<Mvk01ChannelConfig> ReadChannelConfigAsync(int channel, CancellationToken cancellationToken = default)` | Читает конфигурацию измерительного канала; `channel` — 1–8 |
+| `Task<Mvk01Channel> ReadChannelAsync(int channel, CancellationToken cancellationToken = default)` | Читает полный снимок канала АЦП: напряжение, спектр (43 полосы), СКЗ, пик-фактор, эквивалентные значения и состояния; `channel` — 1–8; 5 запросов |
+| `Task<Mvk01Channel> ReadChannelSnapshotAsync(int channel, CancellationToken cancellationToken = default)` | Читает снимок канала тремя объединёнными запросами и проверяет согласованность по копиям регистров; `channel` — 1–8 |
+| `Task<Mvk01ChannelConfig> ReadChannelConfigAsync(int channel, CancellationToken cancellationToken = default)` | Читает конфигурацию измерительного канала одним запросом; `channel` — 1–8 |
 | `Task<Mvk01TachoMeasurement> ReadTachoAsync(int tacho, CancellationToken cancellationToken = default)` | Читает снимок канала тахометра; `tacho` — 1–2 |
 | `Task<float[]> ReadMeasurementByNumberAsync(Mvk01MeasurementNumber number, CancellationToken cancellationToken = default)` | Читает значения параметра по номеру для всех 8 каналов одним запросом (раздел 5.1.2, только ПО 1.0.61+) |
 | `Task<float[]> ReadMeasurementByNumberAsync(int number, CancellationToken cancellationToken = default)` | Читает значения параметра по числовому номеру для всех 8 каналов одним запросом; `number` — 1–184 |
@@ -1062,16 +1071,18 @@ public sealed class Mvk01Device : IMvk01Device
 
 | Сигнатура | Описание |
 |---|---|
-| `public Mvk01Device(IMvkDevice device, Encoding? textEncoding = null)` | Создаёт фасад устройства; `textEncoding` по умолчанию `Mvk01Codec.DefaultTextEncoding` (cp1251); `device == null` — `ArgumentNullException` |
+| `public Mvk01Device(IMvkDevice device, Encoding? textEncoding = null, Mvk01SnapshotOptions? snapshotOptions = null, ILogger<Mvk01Device>? logger = null)` | Создаёт фасад устройства; `textEncoding` по умолчанию `Mvk01Codec.DefaultTextEncoding` (cp1251); `device == null` — `ArgumentNullException` |
 | `public string Id { get; }` | `device.Settings.Id` |
 | `public MvkDeviceSettings Settings { get; }` | `device.Settings` |
 | `public MvkDeviceState State { get; }` | `device.State` |
 | `public IMvkDevice Device { get; }` | Базовое устройство пула |
+| `public Mvk01SnapshotOptions SnapshotOptions { get; }` | Настройки объединённых чтений и согласованности |
 | `public Task EnsureConnectedAsync(CancellationToken cancellationToken = default)` | Делегирует базовому устройству |
 | `public Task DisconnectAsync(CancellationToken cancellationToken = default)` | Делегирует базовому устройству |
-| `public Task<Mvk01DeviceInfo> ReadDeviceInfoAsync(CancellationToken cancellationToken = default)` | 3 запроса: `0x1000` ×12, `0x100C` ×12, `0x1020` ×6 |
+| `public Task<Mvk01DeviceInfo> ReadDeviceInfoAsync(CancellationToken cancellationToken = default)` | 1 запрос: `0x1000` ×38 (fallback — 3 запроса) |
 | `public Task<Mvk01Channel> ReadChannelAsync(int channel, CancellationToken cancellationToken = default)` | 5 запросов по базе канала |
-| `public Task<Mvk01ChannelConfig> ReadChannelConfigAsync(int channel, CancellationToken cancellationToken = default)` | 5 запросов по базе конфигурации канала |
+| `public Task<Mvk01Channel> ReadChannelSnapshotAsync(int channel, CancellationToken cancellationToken = default)` | 3 запроса по базе канала + проверка копий |
+| `public Task<Mvk01ChannelConfig> ReadChannelConfigAsync(int channel, CancellationToken cancellationToken = default)` | 1 запрос: 84 регистра (fallback — 5 запросов) |
 | `public Task<Mvk01TachoMeasurement> ReadTachoAsync(int tacho, CancellationToken cancellationToken = default)` | Один запрос `TachoDataRegisterCount` регистров |
 | `public Task<float[]> ReadMeasurementByNumberAsync(Mvk01MeasurementNumber number, CancellationToken cancellationToken = default)` | Приведение к `int` и вызов перегрузки ниже |
 | `public Task<float[]> ReadMeasurementByNumberAsync(int number, CancellationToken cancellationToken = default)` | 16 регистров → 8 значений float |
@@ -1105,6 +1116,21 @@ Mvk01Channel channel = await device.ReadChannelAsync(1, ct);
 float rms = channel.RmsSets[2].Acceleration;
 ```
 
+#### 7.2.1 `Mvk01SnapshotOptions`
+
+Настройки объединённых чтений и согласованности снимков:
+
+| Свойство | По умолчанию | Смысл |
+|---|---|---|
+| `Consistency` | `Checked` | `Fast` — без проверки копий; `Checked` — проверять и повторять при расхождении |
+| `MaxChannelReadAttempts` | `2` | Число попыток чтения снимка канала |
+| `FallbackToSplitReads` | `true` | Откат на раздельные чтения при Modbus-ошибке `0x02` |
+| `ThrowOnInconsistentSnapshot` | `false` | Бросать `MvkModbusException` вместо возврата `IsConsistent = false` |
+| `MaxMeasurementBatchBlocks` | `7` | Максимум блоков параметров (по 16 регистров) в одном запросе наблюдателя |
+
+Настройки передаются в `Mvk01Device`, `Mvk01DeviceFactory`, `Mvk01Connection.ConnectAsync`
+и `Mvk01Watcher`; в DI — через `AddMvk01Devices(o => o.Consistency = ...)`.
+
 ### 7.3 `Mvk01Connection`
 
 ```csharp
@@ -1121,11 +1147,12 @@ public sealed class Mvk01Connection : IAsyncDisposable
 
 | Сигнатура | Описание |
 |---|---|
-| `public static Task<Mvk01Connection> ConnectAsync(string host, int port = 502, byte slaveId = 1, CancellationToken cancellationToken = default, bool allowConfigurationWrite = false)` | Подключается к устройству МВК01 по адресу и проверяет связь; пустой `host` — `ArgumentException`, недоступное устройство — `MvkModbusException`; при сбое пул освобождается. `allowConfigurationWrite` разрешает запись в защищённую область и системные команды |
+| `public static Task<Mvk01Connection> ConnectAsync(string host, int port = 502, byte slaveId = 1, CancellationToken cancellationToken = default, bool allowConfigurationWrite = false, Mvk01SnapshotOptions? snapshotOptions = null)` | Подключается к устройству МВК01 по адресу и проверяет связь; пустой `host` — `ArgumentException`, недоступное устройство — `MvkModbusException`; при сбое пул освобождается. `allowConfigurationWrite` разрешает запись в защищённую область и системные команды |
 | `public IMvk01Device Device { get; }` | Типизированное устройство (доступ к расширенному API и событиям состояния) |
 | `public Task<Mvk01DeviceInfo> ReadDeviceInfoAsync(CancellationToken cancellationToken = default)` | Читает общие сведения об устройстве |
-| `public Task<Mvk01Channel> ReadChannelAsync(int channel, CancellationToken cancellationToken = default)` | Читает полный снимок канала АЦП |
-| `public Task<Mvk01ChannelConfig> ReadChannelConfigAsync(int channel, CancellationToken cancellationToken = default)` | Читает конфигурацию канала АЦП |
+| `public Task<Mvk01Channel> ReadChannelAsync(int channel, CancellationToken cancellationToken = default)` | Читает полный снимок канала АЦП (5 запросов) |
+| `public Task<Mvk01Channel> ReadChannelSnapshotAsync(int channel, CancellationToken cancellationToken = default)` | Читает снимок канала 3 запросами с проверкой согласованности |
+| `public Task<Mvk01ChannelConfig> ReadChannelConfigAsync(int channel, CancellationToken cancellationToken = default)` | Читает конфигурацию канала АЦП (1 запрос) |
 | `public Task<Mvk01TachoMeasurement> ReadTachoAsync(int tacho, CancellationToken cancellationToken = default)` | Читает снимок канала тахометра |
 | `public Task<float> ReadValueAsync(Mvk01MeasurementNumber number, int channel = 1, CancellationToken cancellationToken = default)` | Читает значение одного канала |
 | `public Task<float> ReadValueAsync(int number, int channel = 1, CancellationToken cancellationToken = default)` | То же по числовому номеру параметра |
@@ -1182,7 +1209,7 @@ public sealed class Mvk01DeviceFactory : IMvk01DeviceFactory
 
 | Сигнатура | Описание |
 |---|---|
-| `public Mvk01DeviceFactory(IMvkDevicePool pool, Encoding? textEncoding = null)` | Создаёт фабрику; `pool == null` — `ArgumentNullException`; `textEncoding` по умолчанию `Mvk01Codec.DefaultTextEncoding` (cp1251) |
+| `public Mvk01DeviceFactory(IMvkDevicePool pool, Encoding? textEncoding = null, Mvk01SnapshotOptions? snapshotOptions = null, ILoggerFactory? loggerFactory = null)` | Создаёт фабрику; `pool == null` — `ArgumentNullException`; `textEncoding` по умолчанию `Mvk01Codec.DefaultTextEncoding` (cp1251) |
 | `public IMvk01Device GetDevice(string id)` | Фасад по идентификатору; созданные фасады кэшируются по `Settings.Id` (сравнение без учёта регистра) |
 | `public bool TryGetDevice(string id, out IMvk01Device device)` | `false` и `device = null!`, если устройства нет в пуле; иначе — результат `GetDevice` |
 | `public IReadOnlyCollection<IMvk01Device> Devices { get; }` | Материализованный список фасадов всех устройств пула |
@@ -1224,9 +1251,9 @@ public static class Mvk01ServiceCollectionExtensions
 
 | Сигнатура | Описание |
 |---|---|
-| `public static IServiceCollection AddMvk01(this IServiceCollection services, IConfiguration configuration, string sectionName = "MvkModbus")` | Одним вызовом: `AddMvkModbus` + `AddMvk01Devices` |
-| `public static IServiceCollection AddMvk01(this IServiceCollection services, Action<MvkModbusOptions> configure)` | То же с программной настройкой |
-| `public static IServiceCollection AddMvk01Devices(this IServiceCollection services)` | Регистрирует фабрику типизированных устройств МВК01 и включает обязательную настройку чётности; `services == null` — `ArgumentNullException` |
+| `public static IServiceCollection AddMvk01(this IServiceCollection services, IConfiguration configuration, string sectionName = "MvkModbus", Action<Mvk01SnapshotOptions>? configureSnapshots = null)` | Одним вызовом: `AddMvkModbus` + `AddMvk01Devices` |
+| `public static IServiceCollection AddMvk01(this IServiceCollection services, Action<MvkModbusOptions> configure, Action<Mvk01SnapshotOptions>? configureSnapshots = null)` | То же с программной настройкой |
+| `public static IServiceCollection AddMvk01Devices(this IServiceCollection services, Action<Mvk01SnapshotOptions>? configureSnapshots = null)` | Регистрирует фабрику типизированных устройств МВК01, включает обязательную настройку чётности и настройки снимков; `services == null` — `ArgumentNullException` |
 
 Что делает метод:
 
@@ -1321,7 +1348,8 @@ public sealed record Mvk01Sample
 public sealed class Mvk01Watcher
 {
     public Mvk01Watcher(IMvk01Device device);
-    public Mvk01Watcher(IMvk01Device device, TimeSpan interval);
+    public Mvk01Watcher(IMvk01Device device, Mvk01SnapshotOptions options);
+    public Mvk01Watcher(IMvk01Device device, TimeSpan interval, Mvk01SnapshotOptions? options = null);
 
     public IMvk01Device Device { get; }
     public TimeSpan Interval { get; }
@@ -1349,7 +1377,8 @@ public sealed class Mvk01Watcher
 | Сигнатура | Описание |
 |---|---|
 | `public Mvk01Watcher(IMvk01Device device)` | Интервал по умолчанию — 500 мс; `device == null` — `ArgumentNullException` |
-| `public Mvk01Watcher(IMvk01Device device, TimeSpan interval)` | `interval <= 0` — `ArgumentOutOfRangeException` |
+| `public Mvk01Watcher(IMvk01Device device, Mvk01SnapshotOptions options)` | Интервал 500 мс и настройки батчинга |
+| `public Mvk01Watcher(IMvk01Device device, TimeSpan interval, Mvk01SnapshotOptions? options = null)` | `interval <= 0` — `ArgumentOutOfRangeException`; `options` по умолчанию — 7 блоков на запрос |
 | `public IMvk01Device Device { get; }` | Наблюдаемое устройство |
 | `public TimeSpan Interval { get; }` | Интервал между циклами |
 | `WatchAsync(Mvk01MeasurementNumber, int channel, ...)` | Короткая форма для одного параметра и канала |

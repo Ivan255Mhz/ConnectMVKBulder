@@ -45,11 +45,12 @@ public sealed class Mvk01Connection : IAsyncDisposable
 
 | Член | Тип | Описание |
 |---|---|---|
-| `ConnectAsync(host, port = 502, slaveId = 1, ct, allowConfigurationWrite = false)` | `static Task<Mvk01Connection>` | Подключиться и проверить связь; запись конфигурации по умолчанию запрещена |
+| `ConnectAsync(host, port = 502, slaveId = 1, ct, allowConfigurationWrite = false, snapshotOptions = null)` | `static Task<Mvk01Connection>` | Подключиться и проверить связь; запись конфигурации по умолчанию запрещена |
 | `Device` | `IMvk01Device` | Типизированное устройство (расширенный API и события) |
 | `ReadDeviceInfoAsync(ct)` | `Task<Mvk01DeviceInfo>` | Общие сведения об устройстве |
-| `ReadChannelAsync(channel, ct)` | `Task<Mvk01Channel>` | Полный снимок канала АЦП |
-| `ReadChannelConfigAsync(channel, ct)` | `Task<Mvk01ChannelConfig>` | Конфигурация канала АЦП |
+| `ReadChannelAsync(channel, ct)` | `Task<Mvk01Channel>` | Полный снимок канала АЦП (5 запросов, совместимость) |
+| `ReadChannelSnapshotAsync(channel, ct)` | `Task<Mvk01Channel>` | Снимок канала 3 запросами с проверкой согласованности |
+| `ReadChannelConfigAsync(channel, ct)` | `Task<Mvk01ChannelConfig>` | Конфигурация канала АЦП (1 запрос) |
 | `ReadTachoAsync(tacho, ct)` | `Task<Mvk01TachoMeasurement>` | Снимок канала тахометра |
 | `ReadValueAsync(number, channel = 1, ct)` | `Task<float>` | Значение одного канала |
 | `ReadValuesAsync(number, ct)` | `Task<float[]>` | Значения параметра по всем 8 каналам |
@@ -73,7 +74,8 @@ public static async Task<Mvk01Connection> ConnectAsync(
     int port = 502,
     byte slaveId = 1,
     CancellationToken cancellationToken = default,
-    bool allowConfigurationWrite = false)
+    bool allowConfigurationWrite = false,
+    Mvk01SnapshotOptions? snapshotOptions = null)
 ```
 
 Алгоритм:
@@ -192,9 +194,10 @@ public interface IMvk01Device
 | `Device` | Сырое `IMvkDevice` (регистры, `ExecuteAsync`, `StateChanged`) | — |
 | `EnsureConnectedAsync(ct)` | Явно подключиться | `MvkModbusException` |
 | `DisconnectAsync(ct)` | Закрыть соединение | `MvkModbusException` |
-| `ReadDeviceInfoAsync(ct)` | 3 запроса: `0x1000×12`, `0x100C×12`, `0x1020×6` | `MvkModbusException` |
+| `ReadDeviceInfoAsync(ct)` | 1 запрос: `0x1000×38` (fallback — 3 запроса) | `MvkModbusException` |
 | `ReadChannelAsync(channel, ct)` | 5 запросов, полный снимок канала (раздел 4) | `MvkModbusException`, `ArgumentOutOfRangeException` |
-| `ReadChannelConfigAsync(channel, ct)` | 5 запросов: `A×6`, `A+0x10×16`, `A+0x20×16`, `A+0x3E×10`, `A+0x50×4` | `MvkModbusException`, `ArgumentOutOfRangeException` |
+| `ReadChannelSnapshotAsync(channel, ct)` | 3 запроса, снимок канала с проверкой копий (раздел 4) | `MvkModbusException`, `ArgumentOutOfRangeException` |
+| `ReadChannelConfigAsync(channel, ct)` | 1 запрос: `A×84` (fallback — 5 запросов) | `MvkModbusException`, `ArgumentOutOfRangeException` |
 | `ReadTachoAsync(tacho, ct)` | 1 запрос: `TachoData(tacho)×14` | `MvkModbusException`, `ArgumentOutOfRangeException` |
 | `ReadMeasurementByNumberAsync(number, ct)` | 1 запрос: 16 регистров от `0x4000 + (N−1)×16`, декодирует `float[8]` | `MvkModbusException`, `ArgumentOutOfRangeException` |
 | `ReadMeasurementByNumberAsync(Mvk01MeasurementNumber, ct)` | То же для именованного номера | То же |
@@ -218,7 +221,11 @@ public interface IMvk01Device
 ```csharp
 public sealed class Mvk01Device : IMvk01Device
 {
-    public Mvk01Device(IMvkDevice device, Encoding? textEncoding = null);
+    public Mvk01Device(
+        IMvkDevice device,
+        Encoding? textEncoding = null,
+        Mvk01SnapshotOptions? snapshotOptions = null,
+        ILogger<Mvk01Device>? logger = null);
 }
 ```
 
@@ -226,6 +233,8 @@ public sealed class Mvk01Device : IMvk01Device
 |---|---|
 | `device` | Базовое устройство пула; `null` — `ArgumentNullException` |
 | `textEncoding` | Кодировка текста устройства (единицы измерения, серийные номера датчиков). `null` — `Mvk01Codec.DefaultTextEncoding`, то есть **cp1251** (с откатом в Latin1, если провайдер кодовых страниц недоступен) |
+| `snapshotOptions` | Настройки объединённых чтений и согласованности; `null` — `Checked`, 3 запроса на снимок канала, до 7 параметров в запросе наблюдателя |
+| `logger` | Логгер предупреждений о fallback и несогласованных снимках; `null` — `NullLogger` |
 
 Кодировка нужна только для строковых полей `Mvk01ChannelConfig.Units` и
 `Mvk01ChannelConfig.SerialNumber` (на устройстве они лежат в cp1251 с обратным
@@ -269,6 +278,7 @@ ushort[] registers = await raw.ReadHoldingRegistersAsync(0x1004, 2, ct);
 
 | Поле | Тип | Адрес | Смысл |
 |---|---|---|---|
+| `CapturedAt` | `DateTimeOffset` | — | Время формирования снимка (UTC) |
 | `SerialNumber` | `string` | `0x1000`, 8 байт | Серийный номер устройства, прямой порядок, например `00004730` |
 | `FirmwareVersion` | `Mvk01FirmwareVersion` | `0x1004` | Версия ПО, например `1.0.67.1` |
 | `Errors` | `Mvk01SystemErrors` | `0x1006` | Битовый индикатор системных ошибок |
@@ -332,6 +342,9 @@ uint calculations = info.DspIndicators.CalculationCounter;
 | Поле | Тип | Смещение | Смысл |
 |---|---|---|---|
 | `Channel` | `int` | — | Номер канала (1–8) |
+| `CapturedAt` | `DateTimeOffset` | — | Время формирования снимка (UTC) |
+| `IsConsistent` | `bool?` | — | `true`/`false` — проверка копий пройдена/не пройдена; `null` — проверка не выполнялась (`ReadChannelAsync`) |
+| `ReadAttempts` | `int` | — | Число попыток чтения снимка |
 | `SensorVoltage` | `float` | `A+0x00` | Напряжение на датчике, В |
 | `Spectrum` | `float[43]` | `A+0x02` | Дольоктавный спектр, полосы 1–43 (единицы по типу спектра устройства) |
 | `PeakFactor` | `float` | `A+0x5C` | Пик-фактор виброускорения X…25 кГц |
@@ -413,6 +426,7 @@ if (channel.State.Overload)
 
 | Поле | Тип | Смещение | Смысл |
 |---|---|---|---|
+| `CapturedAt` | `DateTimeOffset` | — | Время формирования снимка (UTC) |
 | `Tacho` | `int` | — | Номер тахометра (1–2) |
 | `FrequencyHz` | `float` | +0x00 | Частота вращения, Гц |
 | `AverageIncrementHz` | `float` | +0x02 | Среднее приращение частоты на оборот, Гц |
@@ -448,10 +462,12 @@ if (!tacho.InputLevel && tacho.TransitionCount == 0)
 ### 3.4 Mvk01ChannelConfig
 
 Читается `ReadChannelConfigAsync`; источник — блок конфигурации канала
-(`ChannelConfig(channel)`). Пять запросов — только нужные фрагменты блока.
+(`ChannelConfig(channel)`). Один запрос на 84 регистра; при ошибке `0x02` —
+автоматический откат на пять прежних запросов.
 
 | Поле | Тип | Смещение | Смысл |
 |---|---|---|---|
+| `CapturedAt` | `DateTimeOffset` | — | Время формирования снимка (UTC) |
 | `Channel` | `int` | — | Номер канала (1–8) |
 | `ChannelType` | `int` | +0x00 | Тип канала (по документации = 0) |
 | `SensorFactor` | `float` | +0x02 | Коэффициент преобразования датчика, В/(м/с2) |
@@ -495,6 +511,7 @@ if (config.Units.Length == 0)
 `ReadChannelAsync(channel, ct)` — «тяжёлый», но самый информативный метод:
 полный снимок канала одним вызовом. Внутри — **пять последовательных**
 чтений holding-регистров (функция 0x03) через `IMvkDevice.ReadHoldingRegistersAsync`.
+Для уменьшения числа запросов используйте `ReadChannelSnapshotAsync` (раздел 4.2).
 
 ### 4.1 Какие запросы уходят
 
@@ -512,41 +529,72 @@ if (config.Units.Length == 0)
 Итого 246 регистров. Диапазон `A+0x90…A+0x99` (10 регистров) не читается —
 это резерв между наборами СКЗ и постоянной составляющей.
 
-### 4.2 Почему именно так
+### 4.2 ReadChannelSnapshotAsync — 3 запроса и проверка согласованности
+
+`ReadChannelSnapshotAsync(channel, ct)` читает блок канала тремя непрерывными
+диапазонами (все адреса и количества чётные, каждый ≤ 125 регистров):
+
+| № | Адрес | Регистров | Что попадает |
+|---|---|---|---|
+| 1 | `A + 0x00` | 96 | напряжение, спектр, пик-фактор, СКЗ X…25 кГц |
+| 2 | `A + 0x60` | 124 | наборы СКЗ, DC, копия напряжения, состояние, эквивалентные пики |
+| 3 | `A + 0xDC` | 70 | эквивалентные размахи, копия состояния |
+
+Границы полей не пересекают границы диапазонов. Согласованность проверяется
+по дублирующим регистрам:
+
+- `SensorVoltage` (`A+0x00`) и `SensorVoltageCopy` (`A+0x9C`);
+- `ChannelState` (`A+0x9E`) и `ChannelStateCopy` (`A+0x120`).
+
+Если копии совпали — `IsConsistent = true`. Если нет — чтение повторяется
+до `MaxChannelReadAttempts` (по умолчанию 2). После всех попыток снимок
+возвращается с `IsConsistent = false` (либо бросается `MvkModbusException`,
+если включён `ThrowOnInconsistentSnapshot`). В режиме `Fast` проверка пропускается,
+`IsConsistent = null`.
+
+Если устройство не принимает объединённый запрос и возвращает Modbus-ошибку
+`0x02`, библиотека автоматически переходит на прежние пять запросов и помечает
+снимок как непроверенный (`IsConsistent = null`).
+
+### 4.3 Почему именно так
 
 - **Лимит устройства — 125 регистров на запрос.** Весь блок канала (512 регистров)
   одним чтением получить нельзя физически.
 - **Поля разбросаны по смещениям.** Спектр (86 рег.), наборы СКЗ (48 рег.),
   DC и состояние (6 рег.), эквивалентные значения (2 × 48 рег.) разделены
-  промежутками; пять чтений покрывают всё нужное без «холостых» регистров.
-- **Чётность адреса и количества.** Все пять запросов начинаются с чётных адресов
+  промежутками; `ReadChannelAsync` покрывает всё нужное без «холостых» регистров,
+  а `ReadChannelSnapshotAsync` уменьшает число запросов за счёт чтения промежутков.
+- **Чётность адреса и количества.** Все запросы начинаются с чётных адресов
   и имеют чётное количество регистров — требование МВК01
   (`RequireEvenAddressAndQuantity`, см. [главу 7a, раздел 10](07a-mvk01-register-map-and-codec.md#10-особенности-проверенные-на-устройстве)).
-- **Один фасадный вызов вместо пяти ручных.** `ReadChannelAsync` сам вызывает
-  пять чтений и декодирует 32-битные значения с учётом `Settings.ByteOrder`.
+- **Один фасадный вызов вместо ручных.** `ReadChannelAsync`/`ReadChannelSnapshotAsync`
+  сами выполняют чтения и декодируют 32-битные значения с учётом `Settings.ByteOrder`.
 
-### 4.3 Сколько это занимает
+### 4.4 Сколько это занимает
 
-Пять запросов идут последовательно (запросы к одному устройству сериализуются,
+Запросы идут последовательно (запросы к одному устройству сериализуются,
 `MaxConcurrentRequests = 1`). На реальном устройстве штатный снимок канала
 укладывается в **единицы–десятки миллисекунд** (см. README, раздел «Периодический
-опрос значений»). Худший случай при недоступном устройстве — пять таймаутов
+опрос значений»). Худший случай при недоступном устройстве — таймауты
 по `ReadTimeoutMs` (по умолчанию 1000 мс) с учётом `MaxRetries`; поэтому цикл
 опроса должен быть устойчив к `MvkModbusException` (см. раздел 9).
 
-### 4.4 Когда лучше точечные альтернативы
+### 4.5 Когда лучше точечные альтернативы
 
 | Нужно | Метод | Запросов |
 |---|---|---|
-| Полный снимок канала (спектр, все СКЗ, эквиваленты, состояние) | `ReadChannelAsync(channel)` | 5 |
+| Полный снимок канала, совместимость | `ReadChannelAsync(channel)` | 5 |
+| Полный снимок канала с проверкой согласованности | `ReadChannelSnapshotAsync(channel)` | 3 |
 | Один параметр сразу по всем 8 каналам | `ReadMeasurementByNumberAsync(number)` | 1 |
 | Только состояние канала (биты) | `ReadMeasurementRawByNumberAsync(80)` | 1 |
-| Сведения об устройстве | `ReadDeviceInfoAsync()` | 3 |
-| Конфигурация канала | `ReadChannelConfigAsync(channel)` | 5 |
+| Сведения об устройстве | `ReadDeviceInfoAsync()` | 1 |
+| Конфигурация канала | `ReadChannelConfigAsync(channel)` | 1 |
 
-Снимок **не атомарный**: это пять разных запросов, между ними значения могут
-обновиться DSP. Если для расчёта нужен согласованный набор — берите один
-параметр по номеру (раздел 6) или помните о возможном «дрейфе» между полями.
+`ReadChannelAsync` **не проверяет согласованность**: это пять разных запросов,
+между ними значения могут обновиться DSP. `ReadChannelSnapshotAsync` уменьшает
+число запросов до трёх и проверяет копии регистров; при расхождении выполняет
+повтор. Строгую атомарность через несколько запросов Modbus не гарантирует —
+для неё нужна поддержка со стороны прошивки прибора.
 
 ---
 
@@ -915,16 +963,19 @@ builder.Services.AddMvk01Devices();         // TryAddSingleton не переза
 
 | Метод | Запросов | Регистров | Когда использовать |
 |---|---|---|---|
-| `ReadChannelAsync(channel)` | 5 | 246 | Полный снимок канала: спектр, все СКЗ, эквиваленты, состояние. Редко (по требованию, раз в секунды) |
-| `ReadChannelConfigAsync(channel)` | 5 | 52 | Конфигурация канала — при настройке/диагностике |
-| `ReadDeviceInfoAsync()` | 3 | 30 | Сведения об устройстве — при старте/диагностике |
+| `ReadChannelAsync(channel)` | 5 | 246 | Полный снимок канала, совместимость. Редко (по требованию, раз в секунды) |
+| `ReadChannelSnapshotAsync(channel)` | 3 | 290 | Полный снимок канала с проверкой согласованности по копиям |
+| `ReadChannelConfigAsync(channel)` | 1 | 84 | Конфигурация канала — при настройке/диагностике |
+| `ReadDeviceInfoAsync()` | 1 | 38 | Сведения об устройстве — при старте/диагностике |
 | `ReadTachoAsync(tacho)` | 1 | 14 | Снимок тахометра |
 | `ReadMeasurementByNumberAsync(number)` | 1 | 16 | **Основной метод периодического опроса**: один параметр по всем 8 каналам |
 | `ReadMeasurementRawByNumberAsync(number)` | 1 | 16 | Битовые поля (состояние и т.п.) |
 
 Для периодического опроса выбирайте `ReadMeasurementByNumberAsync`:
-один запрос вместо пяти, значения по всем каналам канала сразу, и они
-согласованы между каналами (один параметр — один запрос).
+один запрос вместо трёх-пяти, значения по всем каналам сразу, и они
+согласованы между каналами (один параметр — один запрос). `Mvk01Watcher`
+дополнительно объединяет соседние параметры: до 7 блоков (112 регистров)
+в одном запросе.
 
 ### 8.2 Периодический опрос: готовый паттерн
 
@@ -974,8 +1025,11 @@ while (await timer.WaitForNextTickAsync(cts.Token))
   параметры подряд.
 - **Не читайте `ReadChannelAsync` с периодом меньше секунды**, если нужен
   только один параметр: 5 запросов × 246 регистров дают лишний трафик.
-- **Не полагайтесь на атомарность снимка канала** — это 5 запросов. Для
-  согласованного набора используйте параметр по номеру.
+  Для полного снимка используйте `ReadChannelSnapshotAsync` (3 запроса).
+- **Помните об ограничении атомарности.** `ReadChannelSnapshotAsync` проверяет
+  копии регистров, но строгую атомарность через несколько запросов Modbus
+  не гарантирует; для одного параметра используйте
+  `ReadMeasurementByNumberAsync`.
 - **Не дублируйте чтение.** Один `ReadMeasurementByNumberAsync(55)` уже вернул
   значения по всем каналам — не вызывайте его в цикле по каналам.
 
@@ -1036,9 +1090,10 @@ await foreach (Mvk01Sample sample in mvk.WatchAsync(
 
 `Mvk01Watcher` не создаёт соединение сам: первый запрос лениво подключается
 через `IMvk01Device`, а реконнект выполняет пул. Watcher опрашивает параметры
-по номерам (`ReadMeasurementByNumberAsync`); для полного снимка канала со
-спектром и состоянием используйте `ReadChannelAsync` в собственном цикле —
-это другой профиль нагрузки (5 запросов вместо одного).
+по номерам и объединяет соседние номера: до 7 блоков по 16 регистров (112
+регистров) в одном запросе. Для полного снимка канала со спектром и состоянием
+используйте `ReadChannelSnapshotAsync` в собственном цикле — это другой профиль
+нагрузки (3 запроса вместо одного).
 
 Полные примеры фоновой службы, опроса нескольких параметров и слияния потоков
 от нескольких устройств — в [рецептах 15 и 16](11-recipes.md).
@@ -1292,14 +1347,16 @@ Mvk01CommandResult result = await device.ExecuteSystemCommandAsync(
   IP (разные порты/`SlaveId`) так не подключить: `Id = host.Trim()`.
 - **У `Mvk01Connection` нет чтения по номерам и команд Restore/Reboot.**
   Они есть у `IMvk01Device` — обращайтесь через `mvk.Device`.
-- **Снимок канала не атомарный.** `ReadChannelAsync` — пять последовательных
-  запросов; значения между ними могут обновиться. Для согласованного набора —
-  `ReadMeasurementByNumberAsync`.
-- **Стоимость снимка.** 5 запросов × до `ReadTimeoutMs` (по умолчанию 1000 мс)
-  в худшем случае при недоступном устройстве; не вызывайте `ReadChannelAsync`
-  в тесном цикле без обработки ошибок.
-- **Промежуток `A+0x90…A+0x99` не читается.** Это резерв; в снимке его нет
-  по замыслу, а не по ошибке.
+- **`ReadChannelAsync` не проверяет согласованность.** Это пять последовательных
+  запросов; значения между ними могут обновиться. Для проверяемого снимка —
+  `ReadChannelSnapshotAsync`, для одного параметра — `ReadMeasurementByNumberAsync`.
+- **Стоимость снимка.** `ReadChannelSnapshotAsync` — 3 запроса; в худшем случае
+  при недоступном устройстве каждый ждёт до `ReadTimeoutMs` (по умолчанию 1000 мс)
+  с учётом `MaxRetries`; не вызывайте его в тесном цикле без обработки ошибок.
+- **Промежутки внутри блока читаются в snapshot-режиме.** `ReadChannelSnapshotAsync`
+  захватывает и резервные адреса (`A+0x90…A+0x99`, `A+0xD0…A+0xDF`,
+  `A+0x110…A+0x11F`); если устройство возвращает на них ошибку `0x02`,
+  библиотека автоматически переходит на пять раздельных запросов.
 - **`DeviceStatus` бывает `null`.** При `Timeout` и ошибке записи статус
   от устройства не получен — не форматируйте его как число без проверки.
 - **Неизвестный статус команды ждёт таймаут.** `Pending` объявлен в перечислении,

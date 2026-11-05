@@ -9,6 +9,9 @@ namespace Mvk.MVK01
     /// </summary>
     public sealed record Mvk01DeviceInfo
     {
+        /// <summary>Время формирования снимка (UTC).</summary>
+        public DateTimeOffset CapturedAt { get; init; }
+
         /// <summary>Серийный номер устройства.</summary>
         public required string SerialNumber { get; init; }
 
@@ -42,6 +45,19 @@ namespace Mvk.MVK01
     /// </summary>
     public sealed record Mvk01Channel
     {
+        /// <summary>Время формирования снимка (UTC).</summary>
+        public DateTimeOffset CapturedAt { get; init; }
+
+        /// <summary>
+        /// Согласованность снимка. <see langword="null"/> — проверка не выполнялась
+        /// (<c>ReadChannelAsync</c>), <see langword="true"/> — копии регистров совпали,
+        /// <see langword="false"/> — обнаружено расхождение после всех попыток.
+        /// </summary>
+        public bool? IsConsistent { get; init; }
+
+        /// <summary>Число попыток чтения снимка.</summary>
+        public int ReadAttempts { get; init; } = 1;
+
         /// <summary>Номер канала (1–8).</summary>
         public required int Channel { get; init; }
 
@@ -88,6 +104,9 @@ namespace Mvk.MVK01
     /// </summary>
     public sealed record Mvk01TachoMeasurement
     {
+        /// <summary>Время формирования снимка (UTC).</summary>
+        public DateTimeOffset CapturedAt { get; init; }
+
         /// <summary>Номер тахометра (1–2).</summary>
         public required int Tacho { get; init; }
 
@@ -118,6 +137,9 @@ namespace Mvk.MVK01
     /// </summary>
     public sealed record Mvk01ChannelConfig
     {
+        /// <summary>Время формирования снимка (UTC).</summary>
+        public DateTimeOffset CapturedAt { get; init; }
+
         /// <summary>Номер канала (1–8).</summary>
         public required int Channel { get; init; }
 

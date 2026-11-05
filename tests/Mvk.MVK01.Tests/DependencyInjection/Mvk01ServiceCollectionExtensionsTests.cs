@@ -73,6 +73,32 @@ namespace Mvk.MVK01.Tests.DependencyInjection
         }
 
         [Fact]
+        public void AddMvk01Devices_ConfiguresSnapshotOptions()
+        {
+            ServiceCollection services = new();
+            services.AddLogging();
+            services.AddMvkModbus(options =>
+            {
+                options.Devices = [new MvkDeviceOptions { Id = "mvk-1", Host = "10.20.0.211" }];
+            });
+            services.AddMvk01Devices(options =>
+            {
+                options.Consistency = Mvk01SnapshotConsistencyMode.Fast;
+                options.MaxMeasurementBatchBlocks = 3;
+            });
+
+            using ServiceProvider provider = services.BuildServiceProvider();
+
+            Mvk01SnapshotOptions snapshotOptions = provider.GetRequiredService<Mvk01SnapshotOptions>();
+            Assert.Equal(Mvk01SnapshotConsistencyMode.Fast, snapshotOptions.Consistency);
+            Assert.Equal(3, snapshotOptions.MaxMeasurementBatchBlocks);
+
+            IMvk01DeviceFactory factory = provider.GetRequiredService<IMvk01DeviceFactory>();
+            Mvk01Device device = Assert.IsType<Mvk01Device>(factory.GetDevice("mvk-1"));
+            Assert.Same(snapshotOptions, device.SnapshotOptions);
+        }
+
+        [Fact]
         public void GetDevice_Unknown_ThrowsDeviceNotFound()
         {
             ServiceCollection services = new();

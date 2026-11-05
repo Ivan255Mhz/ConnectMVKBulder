@@ -45,13 +45,15 @@ namespace Mvk.MVK01
         /// Разрешить запись в защищённую область конфигурации и системные команды
         /// Save/Restore/Reboot. По умолчанию запрещено.
         /// </param>
+        /// <param name="snapshotOptions">Настройки объединённых чтений и согласованности снимков.</param>
         /// <exception cref="MvkModbusException">Устройство недоступно или отключено.</exception>
         public static async Task<Mvk01Connection> ConnectAsync(
             string host,
             int port = 502,
             byte slaveId = 1,
             CancellationToken cancellationToken = default,
-            bool allowConfigurationWrite = false)
+            bool allowConfigurationWrite = false,
+            Mvk01SnapshotOptions? snapshotOptions = null)
         {
             if (string.IsNullOrWhiteSpace(host))
             {
@@ -78,7 +80,7 @@ namespace Mvk.MVK01
 
             try
             {
-                Mvk01Device device = new(pool.GetDevice(host.Trim()));
+                Mvk01Device device = new(pool.GetDevice(host.Trim()), snapshotOptions: snapshotOptions);
                 await device.EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
                 return new Mvk01Connection(pool, device);
             }
@@ -102,6 +104,18 @@ namespace Mvk.MVK01
         public Task<Mvk01Channel> ReadChannelAsync(int channel, CancellationToken cancellationToken = default)
         {
             return device.ReadChannelAsync(channel, cancellationToken);
+        }
+
+        /// <summary>
+        /// Читает снимок канала объединёнными запросами с проверкой согласованности.
+        /// </summary>
+        /// <param name="channel">Номер канала (1–8).</param>
+        /// <param name="cancellationToken">Токен отмены.</param>
+        public Task<Mvk01Channel> ReadChannelSnapshotAsync(
+            int channel,
+            CancellationToken cancellationToken = default)
+        {
+            return device.ReadChannelSnapshotAsync(channel, cancellationToken);
         }
 
         /// <summary>Читает конфигурацию канала АЦП.</summary>

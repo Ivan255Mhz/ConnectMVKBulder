@@ -206,9 +206,13 @@ namespace Mvk.MVK01
 
         private static Mvk01Watcher CreateWatcher(IMvk01Device device, TimeSpan? interval)
         {
+            Mvk01SnapshotOptions? options = (device as Mvk01Device)?.SnapshotOptions;
+
             return interval is null
-                ? new Mvk01Watcher(device)
-                : new Mvk01Watcher(device, interval.Value);
+                ? options is null
+                    ? new Mvk01Watcher(device)
+                    : new Mvk01Watcher(device, options)
+                : new Mvk01Watcher(device, interval.Value, options);
         }
 
         private static void ValidateChannel(int channel)

@@ -932,16 +932,19 @@ public sealed class DeviceTimeoutTests
 | `Transport/NModbusTransportTests.cs` | транспорт против `MvkTestServer` и `SilentTcpServer`, переподключение, `MapException` |
 | `TestDeviceSettings.cs`, `FakeTransport.cs` | внутренние помощники тест-проекта: быстрые настройки и транспорт с задержкой/счётчиками |
 
-`tests/Mvk.MVK01.Tests` — 119 тестов (83 `[Fact]` + 14 `[Theory]` c 36
+`tests/Mvk.MVK01.Tests` — 143 теста (107 `[Fact]` + 14 `[Theory]` c 36
 вариантами `[InlineData]`):
 
 | Файл | Что покрыто |
 |---|---|
 | `Mvk01RegisterMapTests.cs` | адреса каналов, тахометров, параметров по номерам |
 | `Mvk01CodecTests.cs` | версия ПО, битовые поля, cp1251 и swap-строки, команды |
-| `Mvk01DeviceTests.cs` | снимки канала/тахометра/конфигурации, параметры по номерам, команды |
+| `Mvk01DeviceTests.cs` | снимки канала/тахометра/конфигурации, параметры по номерам, команды, `ReadChannelSnapshotAsync` |
+| `Mvk01ReadPlannerTests.cs` | чанки снимков, чётность, лимит 125, батчи параметров |
+| `Mvk01ReadingTests.cs` | количество запросов, проверка копий, повторы, `Fast`, fallback на раздельные чтения |
 | `Mvk01ConnectionTests.cs` | режим «только чтение» по умолчанию, opt-in запись, защищённая область, Save без разрешения, `ReadValueAsync`/`WatchAsync` |
 | `Polling/Mvk01WatcherTests.cs` | периодический опрос, интервал, ошибки, отмена, валидация |
+| `Polling/Mvk01WatcherBatchingTests.cs` | объединение соседних параметров, лимит батча, ошибки группы |
 | `Setpoints/MvkSetpointEngineTests.cs` | гистерезис Above/Below/Outside/Inside, задержка, `Unknown`, несколько уровней |
 | `Setpoints/MvkSetpointSetTests.cs` | fluent-набор, auto-id, валидация |
 | `Setpoints/MvkSetpointStoreTests.cs` | JSON round-trip, массив/объект, ошибки, in-memory |
