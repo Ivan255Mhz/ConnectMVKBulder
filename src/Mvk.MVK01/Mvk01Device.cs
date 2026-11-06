@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -148,7 +147,7 @@ namespace Mvk.MVK01
             ValidateChannel(channel);
 
             int maxAttempts = Math.Max(1, snapshotOptions.MaxChannelReadAttempts);
-            IReadOnlyList<Mvk01ReadChunk> chunks = Mvk01ReadPlanner.ChannelDataChunks(channel);
+            Mvk01ChannelChunks chunks = Mvk01ReadPlanner.ChannelDataChunks(channel);
             MvkByteOrder order = Settings.ByteOrder;
             Mvk01Channel? lastSnapshot = null;
 
@@ -159,11 +158,11 @@ namespace Mvk.MVK01
                 try
                 {
                     ushort[] first = await ReadRegistersAsync(
-                        chunks[0].Address, chunks[0].Quantity, cancellationToken).ConfigureAwait(false);
+                        chunks.First.Address, chunks.First.Quantity, cancellationToken).ConfigureAwait(false);
                     ushort[] second = await ReadRegistersAsync(
-                        chunks[1].Address, chunks[1].Quantity, cancellationToken).ConfigureAwait(false);
+                        chunks.Second.Address, chunks.Second.Quantity, cancellationToken).ConfigureAwait(false);
                     ushort[] third = await ReadRegistersAsync(
-                        chunks[2].Address, chunks[2].Quantity, cancellationToken).ConfigureAwait(false);
+                        chunks.Third.Address, chunks.Third.Quantity, cancellationToken).ConfigureAwait(false);
 
                     bool consistent = IsChannelSnapshotConsistent(first, second, third, order);
 
@@ -548,19 +547,16 @@ namespace Mvk.MVK01
             ReadOnlySpan<ushort> ranges,
             MvkByteOrder order)
         {
-            float[] rmsValues = Mvk01Codec.DecodeFloats(
-                rmsRegisters,
-                Mvk01RegisterMap.RmsSetCount * Mvk01RegisterMap.RmsSetValues,
-                order);
-            List<Mvk01RmsSet> rmsSets = new(Mvk01RegisterMap.RmsSetCount);
+            Mvk01RmsSet[] rmsSets = new Mvk01RmsSet[Mvk01RegisterMap.RmsSetCount];
 
             for (int i = 0; i < Mvk01RegisterMap.RmsSetCount; i++)
             {
-                rmsSets.Add(new Mvk01RmsSet(
+                int offset = i * Mvk01RegisterMap.RmsSetValues * 2;
+                rmsSets[i] = new Mvk01RmsSet(
                     RmsSetNames[i],
-                    rmsValues[i * Mvk01RegisterMap.RmsSetValues],
-                    rmsValues[i * Mvk01RegisterMap.RmsSetValues + 1],
-                    rmsValues[i * Mvk01RegisterMap.RmsSetValues + 2]));
+                    RegisterCodec.ToSingle(rmsRegisters.Slice(offset, 2), order),
+                    RegisterCodec.ToSingle(rmsRegisters.Slice(offset + 2, 2), order),
+                    RegisterCodec.ToSingle(rmsRegisters.Slice(offset + 4, 2), order));
             }
 
             return new Mvk01Channel

@@ -10,6 +10,29 @@ namespace Mvk.MVK01
     internal readonly record struct Mvk01ReadChunk(ushort Address, ushort Quantity);
 
     /// <summary>
+    /// Три непрерывных диапазона блока канала. Структура, чтобы не выделять
+    /// массив на каждый снимок.
+    /// </summary>
+    internal readonly struct Mvk01ChannelChunks
+    {
+        public Mvk01ChannelChunks(
+            Mvk01ReadChunk first,
+            Mvk01ReadChunk second,
+            Mvk01ReadChunk third)
+        {
+            First = first;
+            Second = second;
+            Third = third;
+        }
+
+        public Mvk01ReadChunk First { get; }
+
+        public Mvk01ReadChunk Second { get; }
+
+        public Mvk01ReadChunk Third { get; }
+    }
+
+    /// <summary>
     /// Группа параметров, читаемых одним запросом.
     /// </summary>
     /// <param name="StartNumber">Первый номер параметра в группе.</param>
@@ -38,16 +61,18 @@ namespace Mvk.MVK01
         /// Три запроса, покрывающих блок расчётных параметров канала (0x2000–0x2121).
         /// Границы полей не пересекают границы чанков.
         /// </summary>
-        public static IReadOnlyList<Mvk01ReadChunk> ChannelDataChunks(int channel)
+        public static Mvk01ChannelChunks ChannelDataChunks(int channel)
         {
             ushort baseAddress = Mvk01RegisterMap.ChannelData(channel);
 
-            return
-            [
-                new(baseAddress, ChannelFirstChunkQuantity),
-                new((ushort)(baseAddress + ChannelSecondChunkOffset), ChannelSecondChunkQuantity),
-                new((ushort)(baseAddress + ChannelThirdChunkOffset), ChannelThirdChunkQuantity)
-            ];
+            return new Mvk01ChannelChunks(
+                new Mvk01ReadChunk(baseAddress, ChannelFirstChunkQuantity),
+                new Mvk01ReadChunk(
+                    (ushort)(baseAddress + ChannelSecondChunkOffset),
+                    ChannelSecondChunkQuantity),
+                new Mvk01ReadChunk(
+                    (ushort)(baseAddress + ChannelThirdChunkOffset),
+                    ChannelThirdChunkQuantity));
         }
 
         /// <summary>

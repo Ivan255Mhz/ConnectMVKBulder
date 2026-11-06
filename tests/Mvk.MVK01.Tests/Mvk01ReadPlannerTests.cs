@@ -12,26 +12,28 @@ namespace Mvk.MVK01.Tests
         {
             for (int channel = 1; channel <= Mvk01RegisterMap.MaxChannels; channel++)
             {
-                IReadOnlyList<Mvk01ReadChunk> chunks = Mvk01ReadPlanner.ChannelDataChunks(channel);
+                Mvk01ChannelChunks chunks = Mvk01ReadPlanner.ChannelDataChunks(channel);
 
-                Assert.Equal(3, chunks.Count);
-
-                foreach (Mvk01ReadChunk chunk in chunks)
-                {
-                    Assert.Equal(0, chunk.Address % 2);
-                    Assert.Equal(0, chunk.Quantity % 2);
-                    Assert.InRange(chunk.Quantity, 1, 125);
-                }
+                AssertValidChunk(chunks.First);
+                AssertValidChunk(chunks.Second);
+                AssertValidChunk(chunks.Third);
 
                 ushort baseAddress = Mvk01RegisterMap.ChannelData(channel);
 
-                Assert.Equal(baseAddress, chunks[0].Address);
-                Assert.Equal(chunks[0].Address + chunks[0].Quantity, chunks[1].Address);
-                Assert.Equal(chunks[1].Address + chunks[1].Quantity, chunks[2].Address);
+                Assert.Equal(baseAddress, chunks.First.Address);
+                Assert.Equal(chunks.First.Address + chunks.First.Quantity, chunks.Second.Address);
+                Assert.Equal(chunks.Second.Address + chunks.Second.Quantity, chunks.Third.Address);
                 Assert.Equal(
                     baseAddress + 0x122,
-                    chunks[2].Address + chunks[2].Quantity);
+                    chunks.Third.Address + chunks.Third.Quantity);
             }
+        }
+
+        private static void AssertValidChunk(Mvk01ReadChunk chunk)
+        {
+            Assert.Equal(0, chunk.Address % 2);
+            Assert.Equal(0, chunk.Quantity % 2);
+            Assert.InRange(chunk.Quantity, 1, 125);
         }
 
         [Fact]

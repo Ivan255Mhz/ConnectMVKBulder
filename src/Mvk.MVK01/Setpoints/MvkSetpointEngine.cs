@@ -144,14 +144,14 @@ namespace Mvk.MVK01.Setpoints
                     "В сэмпле не заполнен DeviceId: движок не может сопоставить уставки с устройством.");
             }
 
-            List<MvkAlarmEvent> events = [];
+            List<MvkAlarmEvent>? events = null;
 
             lock (sync)
             {
                 MeasurementKey key = new(deviceId, (int)sample.Item.Number);
                 if (!setpointsByMeasurement.TryGetValue(key, out List<MvkSetpoint>? matching))
                 {
-                    return events;
+                    return Array.Empty<MvkAlarmEvent>();
                 }
 
                 foreach (MvkSetpoint setpoint in matching)
@@ -169,15 +169,15 @@ namespace Mvk.MVK01.Setpoints
 
                     if (!hasValue || !float.IsFinite(value))
                     {
-                        UpdateUnknown(setpoint, state, now, sample.Error, events);
+                        UpdateUnknown(setpoint, state, now, sample.Error, ref events);
                         continue;
                     }
 
-                    EvaluateValue(setpoint, state, value, now, events);
+                    EvaluateValue(setpoint, state, value, now, ref events);
                 }
             }
 
-            return events;
+            return events is null ? Array.Empty<MvkAlarmEvent>() : events;
         }
 
         private void UpdateUnknown(
@@ -185,7 +185,7 @@ namespace Mvk.MVK01.Setpoints
             SetpointState state,
             DateTimeOffset now,
             MvkModbusException? error,
-            List<MvkAlarmEvent> events)
+            ref List<MvkAlarmEvent>? events)
         {
             state.LastValue = float.NaN;
             state.Timestamp = now;
@@ -201,7 +201,7 @@ namespace Mvk.MVK01.Setpoints
             state.State = MvkSetpointState.Unknown;
             state.ActiveSince = null;
 
-            events.Add(CreateEvent(
+            AddEvent(ref events, CreateEvent(
                 setpoint,
                 now,
                 MvkSetpointState.Unknown,
@@ -215,7 +215,7 @@ namespace Mvk.MVK01.Setpoints
             SetpointState state,
             float value,
             DateTimeOffset now,
-            List<MvkAlarmEvent> events)
+            ref List<MvkAlarmEvent>? events)
         {
             bool condition = IsConditionMet(setpoint, value);
 
@@ -228,7 +228,7 @@ namespace Mvk.MVK01.Setpoints
                 case MvkSetpointState.Normal:
                     if (condition)
                     {
-                        StartOrActivate(setpoint, state, value, now, events);
+                        StartOrActivate(setpoint, state, value, now, ref events);
                     }
 
                     break;
@@ -242,7 +242,7 @@ namespace Mvk.MVK01.Setpoints
                     else if (state.PendingSince is DateTimeOffset pendingSince
                         && now - pendingSince >= setpoint.ActivationDelay)
                     {
-                        Activate(setpoint, state, value, now, events);
+                        Activate(setpoint, state, value, now, ref events);
                     }
 
                     break;
@@ -255,7 +255,7 @@ namespace Mvk.MVK01.Setpoints
                         state.ActiveSince = null;
                         state.PendingSince = null;
 
-                        events.Add(CreateEvent(
+                        AddEvent(ref events, CreateEvent(
                             setpoint,
                             now,
                             MvkSetpointState.Normal,
@@ -269,7 +269,7 @@ namespace Mvk.MVK01.Setpoints
                 case MvkSetpointState.Unknown:
                     if (condition)
                     {
-                        StartOrActivate(setpoint, state, value, now, events);
+                        StartOrActivate(setpoint, state, value, now, ref events);
                     }
                     else
                     {
@@ -278,7 +278,7 @@ namespace Mvk.MVK01.Setpoints
                         state.ActiveSince = null;
                         state.PendingSince = null;
 
-                        events.Add(CreateEvent(
+                        AddEvent(ref events, CreateEvent(
                             setpoint,
                             now,
                             MvkSetpointState.Normal,
@@ -296,11 +296,11 @@ namespace Mvk.MVK01.Setpoints
             SetpointState state,
             float value,
             DateTimeOffset now,
-            List<MvkAlarmEvent> events)
+            ref List<MvkAlarmEvent>? events)
         {
             if (setpoint.ActivationDelay <= TimeSpan.Zero)
             {
-                Activate(setpoint, state, value, now, events);
+                Activate(setpoint, state, value, now, ref events);
                 return;
             }
 
@@ -313,20 +313,26 @@ namespace Mvk.MVK01.Setpoints
             SetpointState state,
             float value,
             DateTimeOffset now,
-            List<MvkAlarmEvent> events)
+            ref List<MvkAlarmEvent>? events)
         {
             MvkSetpointState previous = state.State;
             state.State = MvkSetpointState.Active;
             state.ActiveSince = now;
             state.PendingSince = null;
 
-            events.Add(CreateEvent(
+            AddEvent(ref events, CreateEvent(
                 setpoint,
                 now,
                 MvkSetpointState.Active,
                 previous,
                 value,
                 null));
+        }
+
+        private static void AddEvent(ref List<MvkAlarmEvent>? events, MvkAlarmEvent alarm)
+        {
+            events ??= [];
+            events.Add(alarm);
         }
 
         private static bool IsConditionMet(MvkSetpoint setpoint, float value)
