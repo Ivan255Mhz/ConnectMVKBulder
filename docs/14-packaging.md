@@ -20,7 +20,7 @@
 Метаданные заданы в корневом `Directory.Build.props` — они применяются ко всем проектам:
 
 ```xml
-<VersionPrefix Condition="'$(VersionPrefix)' == ''">0.5.0</VersionPrefix>
+<VersionPrefix Condition="'$(VersionPrefix)' == ''">0.5.1</VersionPrefix>
 <Authors>БеляевИА</Authors>
 <Product>ConnectMVKBulder</Product>
 <PackageTags>modbus;modbus-tcp;mvk;mvk01;виброконтроль</PackageTags>
@@ -57,23 +57,23 @@ dotnet pack ConnectMVKBulder.sln -c Release -o nupkgs
 Результат в папке `nupkgs/`:
 
 ```
-Mvk.Modbus.0.5.0.nupkg      Mvk.Modbus.0.5.0.snupkg
-Mvk.MVK01.0.5.0.nupkg       Mvk.MVK01.0.5.0.snupkg
+Mvk.Modbus.0.5.1.nupkg      Mvk.Modbus.0.5.1.snupkg
+Mvk.MVK01.0.5.1.nupkg       Mvk.MVK01.0.5.1.snupkg
 ```
 
-Состав пакета `Mvk.MVK01.0.5.0.nupkg` (проверено):
+Состав пакета `Mvk.MVK01.0.5.1.nupkg` (проверено):
 
 ```
 lib/net8.0/Mvk.MVK01.dll
 lib/net8.0/Mvk.MVK01.xml        — XML-документация
 README.md                        — отображается на странице пакета
-Mvk.MVK01.nuspec                 — зависимости: Mvk.Modbus 0.5.0, System.Text.Encoding.CodePages
+Mvk.MVK01.nuspec                 — зависимости: Mvk.Modbus 0.5.1, System.Text.Encoding.CodePages
 ```
 
 Задать версию для конкретной сборки можно без правки файлов:
 
 ```powershell
-dotnet pack ConnectMVKBulder.sln -c Release -o nupkgs -p:Version=0.5.0
+dotnet pack ConnectMVKBulder.sln -c Release -o nupkgs -p:Version=0.5.1
 ```
 
 > Папка `nupkgs/` — артефакт сборки; добавьте её в `.gitignore` (пакеты не хранят в git).
@@ -84,7 +84,7 @@ dotnet pack ConnectMVKBulder.sln -c Release -o nupkgs -p:Version=0.5.0
 
 ```powershell
 dotnet add C:\Projects\MyApp\MyApp.csproj package Mvk.MVK01 `
-    --version 0.5.0 --source C:\Libraries\ConnectMVKBulder\nupkgs
+    --version 0.5.1 --source C:\Libraries\ConnectMVKBulder\nupkgs
 ```
 
 `Mvk.Modbus` установится автоматически как зависимость. Если нужен только транспорт
@@ -94,7 +94,7 @@ dotnet add C:\Projects\MyApp\MyApp.csproj package Mvk.MVK01 `
 
 ```powershell
 dotnet nuget add source C:\Libraries\ConnectMVKBulder\nupkgs -n mvk-local
-dotnet add C:\Projects\MyApp\MyApp.csproj package Mvk.MVK01 --version 0.5.0
+dotnet add C:\Projects\MyApp\MyApp.csproj package Mvk.MVK01 --version 0.5.1
 ```
 
 Проверить и удалить источник:
@@ -146,7 +146,7 @@ Console.WriteLine($"{channel.SensorVoltage:F4} В, СКЗ 10…1000 Гц: {chann
 3. обновить пакет у потребителя:
 
 ```powershell
-dotnet add C:\Projects\MyApp\MyApp.csproj package Mvk.MVK01 --version 0.5.0
+dotnet add C:\Projects\MyApp\MyApp.csproj package Mvk.MVK01 --version 0.5.1
 ```
 
 > **Важно.** NuGet кэширует пакеты по версии: если пересобрать ту же версию,
@@ -159,8 +159,8 @@ dotnet add C:\Projects\MyApp\MyApp.csproj package Mvk.MVK01 --version 0.5.0
 
 ```powershell
 # nuget.org
-dotnet nuget push nupkgs\Mvk.Modbus.0.5.0.nupkg --api-key <API_KEY> --source https://api.nuget.org/v3/index.json
-dotnet nuget push nupkgs\Mvk.MVK01.0.5.0.nupkg  --api-key <API_KEY> --source https://api.nuget.org/v3/index.json
+dotnet nuget push nupkgs\Mvk.Modbus.0.5.1.nupkg --api-key <API_KEY> --source https://api.nuget.org/v3/index.json
+dotnet nuget push nupkgs\Mvk.MVK01.0.5.1.nupkg  --api-key <API_KEY> --source https://api.nuget.org/v3/index.json
 
 # внутренний сервер (пример)
 dotnet nuget push nupkgs\*.nupkg --source https://nuget.company.local/v3/index.json --api-key <TOKEN>
@@ -176,7 +176,7 @@ dotnet nuget push nupkgs\*.nupkg --source https://nuget.company.local/v3/index.j
 
 и положить файл `LICENSE` (для MIT) в корень репозитория.
 
-Символы (`.snupkg`) публикуются тем же способом — `dotnet nuget push nupkgs\Mvk.Modbus.0.5.0.snupkg`.
+Символы (`.snupkg`) публикуются тем же способом — `dotnet nuget push nupkgs\Mvk.Modbus.0.5.1.snupkg`.
 
 ## 14.8. Сборка в CI
 
