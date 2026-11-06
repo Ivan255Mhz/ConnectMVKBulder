@@ -46,6 +46,7 @@
 | `samples/Mvk.Sample.Console` | Пример: DI, свой middleware, обзор устройства и режим `watch` |
 | `samples/Mvk.Sample.Polling` | Минимальный пример: опрос СКЗ 10…1000 Гц через `Mvk01Watcher` каждые 0,5 с |
 | `samples/Mvk.Sample.Alarms` | Пример: JSON-уставки, `Mvk01AlarmService` и реакции на тревоги |
+| `benchmarks/Mvk.Benchmarks` | Read-only бенчмарк реальных МВК01: задержки, p50/p95/p99, alloc/op, параллельные чтения |
 
 Зависимости: [NModbus 3.0.81](https://www.nuget.org/packages/NModbus) (изолирован внутри `Mvk.Modbus`),
 `Microsoft.Extensions.*`, `System.Text.Encoding.CodePages` (кодовая страница 1251 в `Mvk.MVK01`).
@@ -62,6 +63,7 @@ dotnet test
 dotnet run --project samples\Mvk.Sample.Console
 dotnet run --project samples\Mvk.Sample.Polling
 dotnet run --project samples\Mvk.Sample.Alarms
+dotnet run --project benchmarks\Mvk.Benchmarks -- --iterations 20 --warmup 3
 dotnet pack ConnectMVKBulder.sln -c Release -o nupkgs
 ```
 
