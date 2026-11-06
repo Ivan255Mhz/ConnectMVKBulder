@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Threading;
 using System.Threading.Tasks;
+using Mvk.Modbus.Protocol;
 
 namespace Mvk.Modbus.Pipeline.Middlewares
 {
@@ -33,12 +34,24 @@ namespace Mvk.Modbus.Pipeline.Middlewares
             TagList tags = new()
             {
                 { "device", context.Settings.Id },
-                { "operation", context.Request.Operation.ToString() },
+                { "operation", GetOperationName(context.Request.Operation) },
                 { "result", context.Response?.IsSuccess == true ? "success" : "error" }
             };
 
             Requests.Add(1, tags);
             Duration.Record(Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds, tags);
+        }
+
+        private static string GetOperationName(ModbusOperation operation)
+        {
+            return operation switch
+            {
+                ModbusOperation.ReadHoldingRegisters => nameof(ModbusOperation.ReadHoldingRegisters),
+                ModbusOperation.ReadInputRegisters => nameof(ModbusOperation.ReadInputRegisters),
+                ModbusOperation.WriteSingleRegister => nameof(ModbusOperation.WriteSingleRegister),
+                ModbusOperation.WriteMultipleRegisters => nameof(ModbusOperation.WriteMultipleRegisters),
+                _ => operation.ToString()
+            };
         }
     }
 }

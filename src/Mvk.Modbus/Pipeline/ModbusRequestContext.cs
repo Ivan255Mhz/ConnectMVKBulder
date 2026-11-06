@@ -11,6 +11,8 @@ namespace Mvk.Modbus.Pipeline
     /// </summary>
     public sealed class ModbusRequestContext
     {
+        private Dictionary<string, object?>? items;
+
         /// <summary>
         /// Создаёт контекст запроса.
         /// </summary>
@@ -52,8 +54,10 @@ namespace Mvk.Modbus.Pipeline
 
         /// <summary>
         /// Произвольные данные, которыми middleware обмениваются в рамках запроса.
+        /// Словарь создаётся лениво: обычные запросы без Items не платят за аллокацию.
         /// </summary>
-        public IDictionary<string, object?> Items { get; } = new Dictionary<string, object?>(StringComparer.Ordinal);
+        public IDictionary<string, object?> Items =>
+            items ??= new Dictionary<string, object?>(StringComparer.Ordinal);
 
         /// <summary>
         /// Ответ получен (успешный или с ошибкой).
@@ -68,7 +72,9 @@ namespace Mvk.Modbus.Pipeline
         /// <param name="value">Найденное значение.</param>
         public bool TryGetItem<T>(string key, out T value)
         {
-            if (Items.TryGetValue(key, out object? raw) && raw is T typed)
+            if (items is not null
+                && items.TryGetValue(key, out object? raw)
+                && raw is T typed)
             {
                 value = typed;
                 return true;

@@ -34,16 +34,19 @@ namespace Mvk.Modbus.Pipeline.Middlewares
 
             if (context.Response?.IsSuccess == true)
             {
-                logger.LogDebug(
-                    "МВК '{DeviceId}': {Operation} 0x{Address:X4} x{Quantity} — успех за {ElapsedMs:F1} мс (попытка {Attempt}).",
-                    context.Settings.Id,
-                    context.Request.Operation,
-                    context.Request.StartAddress,
-                    context.Request.Quantity,
-                    elapsedMs,
-                    context.Attempt);
+                if (logger.IsEnabled(LogLevel.Debug))
+                {
+                    logger.LogDebug(
+                        "МВК '{DeviceId}': {Operation} 0x{Address:X4} x{Quantity} — успех за {ElapsedMs:F1} мс (попытка {Attempt}).",
+                        context.Settings.Id,
+                        context.Request.Operation,
+                        context.Request.StartAddress,
+                        context.Request.Quantity,
+                        elapsedMs,
+                        context.Attempt);
+                }
             }
-            else
+            else if (logger.IsEnabled(LogLevel.Warning))
             {
                 logger.LogWarning(
                     "МВК '{DeviceId}': {Operation} 0x{Address:X4} x{Quantity} — ошибка {ErrorKind} за {ElapsedMs:F1} мс (попытка {Attempt}): {Message}",
